@@ -1,6 +1,8 @@
 package main
 
-import "flag"
+import (
+	"flag"
+)
 
 // golParams provides the details of how to run the Game of Life and which image to load.
 type golParams struct {
@@ -37,6 +39,7 @@ type distributorToIo struct {
 
 	filename  chan<- string
 	inputVal  <-chan uint8
+	outputVal chan<- []cell
 }
 
 // ioToDistributor defines all chans that the io goroutine will have to communicate with the distributor goroutine.
@@ -47,6 +50,7 @@ type ioToDistributor struct {
 
 	filename  <-chan string
 	inputVal  chan<- uint8
+	outputVal <-chan []cell
 }
 
 // distributorChans stores all the chans that the distributor goroutine will use.
@@ -84,6 +88,8 @@ func gameOfLife(p golParams, keyChan <-chan rune) []cell {
 	ioChans.distributor.inputVal = inputVal
 
 	aliveCells := make(chan []cell)
+	dChans.io.outputVal = aliveCells
+	ioChans.distributor.outputVal = aliveCells
 
 	go distributor(p, dChans, aliveCells)
 	go pgmIo(p, ioChans)

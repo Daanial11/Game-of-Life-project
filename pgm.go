@@ -13,6 +13,14 @@ func check(e error) {
 		panic(e)
 	}
 }
+func contains(s []cell, y, x int) bool {
+	for _, a := range s {
+		if a.y == y && a.x == x {
+			return true
+		}
+	}
+	return false
+}
 
 // writePgmImage receives an array of bytes and writes it to a pgm file.
 // Note that this function is incomplete. Use the commented-out for loop to receive data from the distributor.
@@ -38,7 +46,16 @@ func writePgmImage(p golParams, i ioChans) {
 		world[i] = make([]byte, p.imageWidth)
 	}
 
+	alivecells := <-i.distributor.outputVal
+
 	// TODO: write a for-loop to receive the world from the distributor when outputting.
+	for y := 0; y < p.imageHeight; y++ {
+		for x := 0; x < p.imageWidth; x++ {
+			if contains(alivecells, y, x) {
+				world[y][x] = world[y][x] ^ 0xFF
+			}
+		}
+	}
 
 	for y := 0; y < p.imageHeight; y++ {
 		for x := 0; x < p.imageWidth; x++ {
