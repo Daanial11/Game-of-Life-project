@@ -6,6 +6,32 @@ import (
 	"strings"
 )
 
+func collectNeighbours(x,y int, world [][]byte, p golParams) []byte{
+	neigh := make([]byte, 8)
+	for j := 0; j < 3; j++ {
+		for i := 0; i < 3; i++ {
+			if i != 1 && j != 1 {
+				newY :=y-1+i
+				newX :=x-1+j
+				if newX < 0 { newX = p.imageWidth - 1}
+				if newY < 0 { newY = p.imageHeight - 1}
+				if newX == p.imageWidth { newX = 0}
+				if newY == p.imageHeight { newY = 0}
+				neigh = append(neigh, world[newY][newX])
+			}
+		}
+	}
+
+	return neigh
+}
+func aliveNeighCount(neigh[]byte) int{
+	aliveCount := 0
+	for _, cell := range neigh{
+		if cell != 0 {aliveCount++}
+	}
+	return aliveCount
+}
+
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p golParams, d distributorChans, alive chan []cell) {
 
@@ -32,11 +58,24 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 
 	// Calculate the new state of Game of Life after the given number of turns.
 	for turns := 0; turns < p.turns; turns++ {
-		for y := 0; y < p.imageHeight; y++ {
-			for x := 0; x < p.imageWidth; x++ {
-				// Placeholder for the actual Game of Life logic: flips alive cells to dead and dead cells to alive.
-				world[y][x] = world[y][x] ^ 0xFF
+		tempWorld := make([][]byte, p.imageHeight)
+		for turns := 0; turns < p.turns; turns++ {
+			copy(tempWorld, world)
+			for y := 0; y < p.imageHeight; y++ {
+				for x := 0; x < p.imageWidth; x++ {
+					temp := aliveNeighCount(collectNeighbours(x, y, world, p))
+					if temp < 3 {
+						tempWorld[y][x]= 0
+					}
+					if temp > 4 {
+						tempWorld[y][x]= 0
+					}
+					if temp == 3 {
+						tempWorld[y][x] = 255
+					}
+				}
 			}
+			copy(world, tempWorld)
 		}
 	}
 
