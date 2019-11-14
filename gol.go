@@ -40,6 +40,51 @@ func collectNeighbours(x, y int, world [][]byte, p golParams) int {
 	return neigh
 }
 
+func makeImmutableMatrix(matrix [][]uint8) func(y, x int) uint8 {
+	return func(y, x int) uint8 {
+		return matrix[y][x]
+	}
+}
+
+func makeMatrix(height, width int) [][]uint8 {
+	matrix := make([][]uint8, height)
+	for i := range matrix {
+		matrix[i] = make([]uint8, width)
+	}
+	return matrix
+}
+
+//func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
+func worker(startY, endY, startX, endX int, data [][]uint8, p golParams, out chan<- [][]uint8){
+	//height:= endY - startY
+	//width:= endX - startX
+	tempWorld := make([][]byte, p.imageHeight)
+	for i := range tempWorld {
+		tempWorld[i] = make([]byte, p.imageWidth)
+	}
+	//copying world to temp world
+	for y := 0; y < p.imageHeight; y++ {
+		for x := 0; x < p.imageWidth; x++ {
+			tempWorld[y][x] = data[y][x]
+		}
+	}
+	for y := startY; y < endY; y++ {
+		for x := startX; x < endX; x++ {
+			tempWorld [y][x] = GoLogic(tempWorld[y][x], collectNeighbours(x, y , tempWorld, p))
+		}
+	}
+	out <- tempWorld
+}
+
+func GoLogic(cell byte, aliveNeigh int) byte {
+	if aliveNeigh == 3 && cell == 0 {
+		return 255
+	}
+	if aliveNeigh < 2 || aliveNeigh > 3 {
+		return 0
+	}
+	return cell
+}
 /*func aliveNeighCount(neigh []byte) int {
 	aliveCount := 0
 	for _, cell := range neigh {
@@ -75,7 +120,60 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 	}
 
 	// Calculate the new state of Game of Life after the given number of turns.
+	//worlds := make([][][]byte, 1)
+	//worlds = append(worlds, world)
+	tempWorld := make([][]byte, p.imageHeight)
+	for i := range tempWorld {
+		tempWorld[i] = make([]byte, p.imageWidth)
+	}
+	//copying world to temp world
+	for y := 0; y < p.imageHeight; y++ {
+		for x := 0; x < p.imageWidth; x++ {
+			tempWorld[y][x] = world[y][x]
+		}
+	}
 	for turns := 0; turns < p.turns; turns++ {
+		//immutableWorld := makeImmutableMatrix(worlds[turns])
+		out := make(chan [][]uint8)
+
+
+		go worker(0, p.imageHeight, 0, p.imageWidth, world, p, out)
+
+		newWorld:= makeMatrix(0, 0)
+
+		newSegment := <-out
+		newWorld = append(newWorld, newSegment...)
+		//worlds= append(worlds, newWorld)
+		tempWorld := make([][]byte, p.imageHeight)
+		for i := range tempWorld {
+			tempWorld[i] = make([]byte, p.imageWidth)
+		}
+		//copying world to temp world
+		for y := 0; y < p.imageHeight; y++ {
+			for x := 0; x < p.imageWidth; x++ {
+				tempWorld[y][x] = newWorld[y][x]
+			}
+		}
+		for y := 0; y < p.imageHeight; y++ {
+			for x := 0; x < p.imageWidth; x++ {
+				world[y][x] = newWorld[y][x]
+			}
+		}
+		if turns<10 {
+			fmt.Println("nnnnnnnnnnn")
+		}
+
+		for y := 0; y < p.imageHeight; y++ {
+			for x := 0; x < p.imageWidth; x++ {
+				if world[y][x] != 0 && turns<10 {
+					fmt.Println("Alive cell at", x, y)
+
+
+				}
+			}
+		}
+
+		/*
 		tempWorld := make([][]byte, p.imageHeight)
 		for i := range tempWorld {
 			tempWorld[i] = make([]byte, p.imageWidth)
@@ -98,10 +196,15 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 					world[y][x] = 0
 				}
 
+
+
 			}
 		}
 
+		 */
+
 	}
+
 
 	// Create an empty slice to store coordinates of cells that are still alive after p.turns are done.
 	var finalAlive []cell
