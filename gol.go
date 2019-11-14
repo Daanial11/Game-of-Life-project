@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func collectNeighbours(x, y int, world [][]byte, p golParams) int {
+func collectNeighbours(x, y int, world [][]byte, height, width int) int {
 	neigh := 0
 	for i := -1; i < 2; i++ {
 		for j := -1; j < 2; j++ {
@@ -15,15 +15,15 @@ func collectNeighbours(x, y int, world [][]byte, p golParams) int {
 				newY := y + j
 				newX := x + i
 				if newX < 0 {
-					newX = p.imageWidth - 1
+					newX = width - 1
 				}
-				if newX == p.imageWidth {
+				if newX == width {
 					newX = 0
 				}
 				if newY < 0 {
-					newY = p.imageHeight - 1
+					newY = height - 1
 				}
-				if newY == p.imageHeight {
+				if newY == height {
 					newY = 0
 				}
 
@@ -40,6 +40,12 @@ func collectNeighbours(x, y int, world [][]byte, p golParams) int {
 	return neigh
 }
 
+func makeImmutableMatrix(matrix [][]uint8) func(y, x int) uint8 {
+	return func(y, x int) uint8 {
+		return matrix[y][x]
+	}
+}
+
 func makeMatrix(height, width int) [][]uint8 {
 	matrix := make([][]uint8, height)
 	for i := range matrix {
@@ -48,21 +54,29 @@ func makeMatrix(height, width int) [][]uint8 {
 	return matrix
 }
 
-func worker(startY, endY, startX, endX int, data [][]uint8, p golParams, out chan<- [][]uint8) {
-	//height:= endY - startY
+//func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
+func worker(startY, endY, endX int, p golParams, out chan [][]uint8, turns int) {
+	height := endY - startY
 	//width:= endX - startX
-	tempWorld := makeMatrix(p.imageHeight, p.imageWidth)
+
+	currentSegment := <-out
+
+	tempWorld := makeMatrix(height, endX)
+	for i := 0; i < height; i++ {
+		tempWorld[i] = currentSegment[i+1]
+	}
+	if turns < 2 {
+		fmt.Println(tempWorld)
+	}
 	//copying world to temp world
-	for y := 0; y < p.imageHeight; y++ {
-		for x := 0; x < p.imageWidth; x++ {
-			tempWorld[y][x] = data[y][x]
+
+	for y := 0; y < height; y++ {
+		for x := 0; x < endX; x++ {
+			//fmt.Println(y, x, height, p.threads)
+			tempWorld[y][x] = GoLogic(tempWorld[y][x], collectNeighbours(x, y, currentSegment, height, p.imageWidth))
 		}
 	}
-	for y := startY; y < endY; y++ {
-		for x := startX; x < endX; x++ {
-			tempWorld[y][x] = GoLogic(tempWorld[y][x], collectNeighbours(x, y, data, p))
-		}
-	}
+
 	out <- tempWorld
 }
 
@@ -75,6 +89,16 @@ func GoLogic(cell byte, aliveNeigh int) byte {
 	}
 	return cell
 }
+
+/*func aliveNeighCount(neigh []byte) int {
+	aliveCount := 0
+	for _, cell := range7
+		if cell != 0 {
+			aliveCount++7
+		}
+	}
+	return aliveCount
+}*/
 
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p golParams, d distributorChans, alive chan []cell) {
@@ -101,28 +125,120 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 	}
 
 	// Calculate the new state of Game of Life after the given number of turns.
-	tempWorld := makeMatrix(p.imageHeight, p.imageWidth)
+	//worlds := make([][][]byte, 1)
+	//worlds = append(worlds, world)
+	tempWorld := make([][]byte, p.imageHeight)
+	for i := range tempWorld {
+		tempWorld[i] = make([]byte, p.imageWidth)
+	}
 	//copying world to temp world
-	copy(tempWorld,world)
+	for y := 0; y < p.imageHeight; y++ {
+		for x := 0; x < p.imageWidth; x++ {
+			tempWorld[y][x] = world[y][x]
+		}
+	}
+
 	for turns := 0; turns < p.turns; turns++ {
-		//workerHeight := p.imageHeight/p.threads
+		//immutableWorld := makeImmutableMatrix(worlds[turns])
+
+		currentHeight := 0
+
+		dividedHeight := p.imageHeight / p.threads
 		out := make([]chan [][]uint8, p.threads)
-		newWorld := makeMatrix(0, 0)
+
 		for i := range out {
 			out[i] = make(chan [][]uint8)
 		}
-		go worker(0, p.imageHeight, 0, p.imageWidth, world, p, out[0])
 
+		for threads := 0; threads < p.threads; threads++ {
 
-		for threads := 0; threads < 1; threads++ {
-			newSegment := <-out[threads]
+			segmentWorld := makeMatrix((p.imageHeight/p.threads)+2, p.imageWidth)
+
+			if threads != 0 {
+				segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)-1])
+			} else {
+				segmentWorld = append(segmentWorld, world[p.imageHeight-1])
+			}
+			for i := 0; i < dividedHeight; i++ {
+				segmentWorld = append(segmentWorld, world[(threads*dividedHeight)+1])
+			}
+			if threads != (p.threads - 1) {
+				segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)+1])
+			} else {
+				segmentWorld = append(segmentWorld, world[0])
+			}
+			go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, p, out[threads], turns)
+
+			out[threads] <- segmentWorld
+
+			currentHeight += dividedHeight
+		}
+
+		newWorld := makeMatrix(0, 0)
+		for i := 0; i < p.threads; i++ {
+			newSegment := <-out[i]
 			newWorld = append(newWorld, newSegment...)
 		}
 
-		//copying newworld to tempworld
-		copy(tempWorld, newWorld)
+		//worlds= append(worlds, newWorld)
+		tempWorld := make([][]byte, p.imageHeight)
+		for i := range tempWorld {
+			tempWorld[i] = make([]byte, p.imageWidth)
+		}
+		//copying world to temp world
+		for y := 0; y < p.imageHeight; y++ {
+			for x := 0; x < p.imageWidth; x++ {
+				tempWorld[y][x] = newWorld[y][x]
+			}
+		}
+		for y := 0; y < p.imageHeight; y++ {
+			for x := 0; x < p.imageWidth; x++ {
+				world[y][x] = newWorld[y][x]
+			}
+		}
+		if turns < 10 {
+			fmt.Println("nnnnnnnnnnn")
+		}
 
-		copy(world, newWorld)
+		for y := 0; y < p.imageHeight; y++ {
+			for x := 0; x < p.imageWidth; x++ {
+				if world[y][x] != 0 && turns < 10 {
+					fmt.Println("Alive cell at", x, y)
+
+				}
+			}
+		}
+
+		/*
+			tempWorld := make([][]byte, p.imageHeight)
+			for i := range tempWorld {
+				tempWorld[i] = make([]byte, p.imageWidth)
+			}
+			//copying world to temp world
+			for y := 0; y < p.imageHeight; y++ {
+				for x := 0; x < p.imageWidth; x++ {
+					tempWorld[y][x] = world[y][x]
+				}
+			}
+			//using fixed tempworld state to check and update world
+			for y := 0; y < p.imageHeight; y++ {
+				for x := 0; x < p.imageWidth; x++ {
+					temp := collectNeighbours(x, y, tempWorld, p)
+
+					if temp == 3 && world[y][x] == 0 {
+						world[y][x] = 255
+					}
+					if temp < 2 || temp > 3 {
+						world[y][x] = 0
+					}
+
+
+
+				}
+			}
+
+		*/
+
 	}
 
 	// Create an empty slice to store coordinates of cells that are still alive after p.turns are done.
