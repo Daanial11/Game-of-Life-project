@@ -40,12 +40,6 @@ func collectNeighbours(x, y int, world [][]byte, p golParams) int {
 	return neigh
 }
 
-func makeImmutableMatrix(matrix [][]uint8) func(y, x int) uint8 {
-	return func(y, x int) uint8 {
-		return matrix[y][x]
-	}
-}
-
 func makeMatrix(height, width int) [][]uint8 {
 	matrix := make([][]uint8, height)
 	for i := range matrix {
@@ -54,14 +48,10 @@ func makeMatrix(height, width int) [][]uint8 {
 	return matrix
 }
 
-//func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
 func worker(startY, endY, startX, endX int, data [][]uint8, p golParams, out chan<- [][]uint8) {
 	//height:= endY - startY
 	//width:= endX - startX
-	tempWorld := make([][]byte, p.imageHeight)
-	for i := range tempWorld {
-		tempWorld[i] = make([]byte, p.imageWidth)
-	}
+	tempWorld := makeMatrix(p.imageHeight, p.imageWidth)
 	//copying world to temp world
 	for y := 0; y < p.imageHeight; y++ {
 		for x := 0; x < p.imageWidth; x++ {
@@ -85,16 +75,6 @@ func GoLogic(cell byte, aliveNeigh int) byte {
 	}
 	return cell
 }
-
-/*func aliveNeighCount(neigh []byte) int {
-	aliveCount := 0
-	for _, cell := range neigh {
-		if cell != 0 {
-			aliveCount++
-		}
-	}
-	return aliveCount
-}*/
 
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p golParams, d distributorChans, alive chan []cell) {
@@ -121,87 +101,28 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 	}
 
 	// Calculate the new state of Game of Life after the given number of turns.
-	//worlds := make([][][]byte, 1)
-	//worlds = append(worlds, world)
-	tempWorld := make([][]byte, p.imageHeight)
-	for i := range tempWorld {
-		tempWorld[i] = make([]byte, p.imageWidth)
-	}
+	tempWorld := makeMatrix(p.imageHeight, p.imageWidth)
 	//copying world to temp world
-	for y := 0; y < p.imageHeight; y++ {
-		for x := 0; x < p.imageWidth; x++ {
-			tempWorld[y][x] = world[y][x]
-		}
-	}
+	copy(tempWorld,world)
 	for turns := 0; turns < p.turns; turns++ {
-		//immutableWorld := makeImmutableMatrix(worlds[turns])
-		out := make(chan [][]uint8)
-
-		go worker(0, p.imageHeight, 0, p.imageWidth, world, p, out)
-
+		//workerHeight := p.imageHeight/p.threads
+		out := make([]chan [][]uint8, p.threads)
 		newWorld := makeMatrix(0, 0)
+		for i := range out {
+			out[i] = make(chan [][]uint8)
+		}
+		go worker(0, p.imageHeight, 0, p.imageWidth, world, p, out[0])
 
-		newSegment := <-out
-		newWorld = append(newWorld, newSegment...)
-		//worlds= append(worlds, newWorld)
-		tempWorld := make([][]byte, p.imageHeight)
-		for i := range tempWorld {
-			tempWorld[i] = make([]byte, p.imageWidth)
-		}
-		//copying world to temp world
-		for y := 0; y < p.imageHeight; y++ {
-			for x := 0; x < p.imageWidth; x++ {
-				tempWorld[y][x] = newWorld[y][x]
-			}
-		}
-		for y := 0; y < p.imageHeight; y++ {
-			for x := 0; x < p.imageWidth; x++ {
-				world[y][x] = newWorld[y][x]
-			}
-		}
-		if turns < 10 {
-			fmt.Println("nnnnnnnnnnn")
+
+		for threads := 0; threads < 1; threads++ {
+			newSegment := <-out[threads]
+			newWorld = append(newWorld, newSegment...)
 		}
 
-		for y := 0; y < p.imageHeight; y++ {
-			for x := 0; x < p.imageWidth; x++ {
-				if world[y][x] != 0 && turns < 10 {
-					fmt.Println("Alive cell at", x, y)
+		//copying newworld to tempworld
+		copy(tempWorld, newWorld)
 
-				}
-			}
-		}
-
-		/*
-			tempWorld := make([][]byte, p.imageHeight)
-			for i := range tempWorld {
-				tempWorld[i] = make([]byte, p.imageWidth)
-			}
-			//copying world to temp world
-			for y := 0; y < p.imageHeight; y++ {
-				for x := 0; x < p.imageWidth; x++ {
-					tempWorld[y][x] = world[y][x]
-				}
-			}
-			//using fixed tempworld state to check and update world
-			for y := 0; y < p.imageHeight; y++ {
-				for x := 0; x < p.imageWidth; x++ {
-					temp := collectNeighbours(x, y, tempWorld, p)
-
-					if temp == 3 && world[y][x] == 0 {
-						world[y][x] = 255
-					}
-					if temp < 2 || temp > 3 {
-						world[y][x] = 0
-					}
-
-
-
-				}
-			}
-
-		*/
-
+		copy(world, newWorld)
 	}
 
 	// Create an empty slice to store coordinates of cells that are still alive after p.turns are done.
