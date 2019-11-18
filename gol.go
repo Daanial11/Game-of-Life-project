@@ -9,9 +9,9 @@ import (
 func collectNeighbours(x, y int, world [][]byte, height, width int) int {
 	neigh := 0
 	for i := -1; i < 2; i++ {
-		for j := -1; j < 2; j++ {
-			//
-			if i != 0 || j != 0 {
+		for j := 0; j < 3; j++ {
+
+			if i != 0 || j != 1 {
 				newY := y + j
 				newX := x + i
 				if newX < 0 {
@@ -20,12 +20,12 @@ func collectNeighbours(x, y int, world [][]byte, height, width int) int {
 				if newX == width {
 					newX = 0
 				}
-				if newY < 0 {
-					newY = height - 1
-				}
-				if newY == height {
-					newY = 0
-				}
+				//if newY < 0 {
+				//	newY = height - 1
+				//}
+				//if newY == height {
+				//	newY = 0
+				//}
 
 				if world[newY][newX] == 255 {
 					neigh++
@@ -57,27 +57,35 @@ func makeMatrix(height, width int) [][]uint8 {
 //func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
 func worker(startY, endY, endX int, p golParams, out chan [][]uint8, turns int) {
 	height := endY - startY
-	//width:= endX - startX
 
 	currentSegment := <-out
+	//copying segment as using the append operatins below modifies 'currentSegment'
+	segmentCopy := make([][]uint8, len(currentSegment))
+	copy(segmentCopy, currentSegment)
 
-	tempWorld := makeMatrix(height, endX)
-	for i := 0; i < height; i++ {
-		tempWorld[i] = currentSegment[i+1]
+	//removing extra top and bottom row
+	tempWorld := append(segmentCopy[:0], segmentCopy[1:]...)
+	tempWorld = append(tempWorld[:height], tempWorld[height+1:]...)
+
+	//making copy of tempworld with type [][]byte instead of using the tempWorld above, doesn't work without this for some reason.
+	tempWorldCopy := make([][]byte, height)
+	for i := range tempWorldCopy {
+		tempWorldCopy[i] = make([]byte, p.imageWidth)
 	}
-	if turns < 2 {
-		fmt.Println(tempWorld)
-	}
-	//copying world to temp world
 
 	for y := 0; y < height; y++ {
+		for x := 0; x < p.imageWidth; x++ {
+			tempWorldCopy[y][x] = tempWorld[y][x]
+		}
+	}
+	for y := 0; y < height; y++ {
 		for x := 0; x < endX; x++ {
-			//fmt.Println(y, x, height, p.threads)
-			tempWorld[y][x] = GoLogic(tempWorld[y][x], collectNeighbours(x, y, currentSegment, height, p.imageWidth))
+
+			tempWorldCopy[y][x] = GoLogic(tempWorldCopy[y][x], collectNeighbours(x, y, currentSegment, height, p.imageWidth))
 		}
 	}
 
-	out <- tempWorld
+	out <- tempWorldCopy
 }
 
 func GoLogic(cell byte, aliveNeigh int) byte {
@@ -89,16 +97,6 @@ func GoLogic(cell byte, aliveNeigh int) byte {
 	}
 	return cell
 }
-
-/*func aliveNeighCount(neigh []byte) int {
-	aliveCount := 0
-	for _, cell := range7
-		if cell != 0 {
-			aliveCount++7
-		}
-	}
-	return aliveCount
-}*/
 
 // distributor divides the work between workers and interacts with other goroutines.
 func distributor(p golParams, d distributorChans, alive chan []cell) {
@@ -125,8 +123,6 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 	}
 
 	// Calculate the new state of Game of Life after the given number of turns.
-	//worlds := make([][][]byte, 1)
-	//worlds = append(worlds, world)
 	tempWorld := make([][]byte, p.imageHeight)
 	for i := range tempWorld {
 		tempWorld[i] = make([]byte, p.imageWidth)
@@ -139,7 +135,6 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 	}
 
 	for turns := 0; turns < p.turns; turns++ {
-		//immutableWorld := makeImmutableMatrix(worlds[turns])
 
 		currentHeight := 0
 
@@ -152,21 +147,26 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 
 		for threads := 0; threads < p.threads; threads++ {
 
-			segmentWorld := makeMatrix((p.imageHeight/p.threads)+2, p.imageWidth)
-
+			segmentWorld := makeMatrix(0, 0)
+			lastRow := world[p.imageHeight-1]
 			if threads != 0 {
 				segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)-1])
 			} else {
-				segmentWorld = append(segmentWorld, world[p.imageHeight-1])
+				segmentWorld = append(segmentWorld, lastRow)
+
 			}
 			for i := 0; i < dividedHeight; i++ {
-				segmentWorld = append(segmentWorld, world[(threads*dividedHeight)+1])
+				segmentWorld = append(segmentWorld, world[(threads*dividedHeight)+i])
+				if i == dividedHeight-1 {
+					if threads != (p.threads - 1) {
+						segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)+i+1])
+					} else {
+						segmentWorld = append(segmentWorld, world[0])
+					}
+
+				}
 			}
-			if threads != (p.threads - 1) {
-				segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)+1])
-			} else {
-				segmentWorld = append(segmentWorld, world[0])
-			}
+
 			go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, p, out[threads], turns)
 
 			out[threads] <- segmentWorld
@@ -174,70 +174,19 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 			currentHeight += dividedHeight
 		}
 
+		//combining each segment
 		newWorld := makeMatrix(0, 0)
 		for i := 0; i < p.threads; i++ {
 			newSegment := <-out[i]
 			newWorld = append(newWorld, newSegment...)
-		}
 
-		//worlds= append(worlds, newWorld)
-		tempWorld := make([][]byte, p.imageHeight)
-		for i := range tempWorld {
-			tempWorld[i] = make([]byte, p.imageWidth)
 		}
-		//copying world to temp world
-		for y := 0; y < p.imageHeight; y++ {
-			for x := 0; x < p.imageWidth; x++ {
-				tempWorld[y][x] = newWorld[y][x]
-			}
-		}
+		//Copying over the final world state for this turn
 		for y := 0; y < p.imageHeight; y++ {
 			for x := 0; x < p.imageWidth; x++ {
 				world[y][x] = newWorld[y][x]
 			}
 		}
-		if turns < 10 {
-			fmt.Println("nnnnnnnnnnn")
-		}
-
-		for y := 0; y < p.imageHeight; y++ {
-			for x := 0; x < p.imageWidth; x++ {
-				if world[y][x] != 0 && turns < 10 {
-					fmt.Println("Alive cell at", x, y)
-
-				}
-			}
-		}
-
-		/*
-			tempWorld := make([][]byte, p.imageHeight)
-			for i := range tempWorld {
-				tempWorld[i] = make([]byte, p.imageWidth)
-			}
-			//copying world to temp world
-			for y := 0; y < p.imageHeight; y++ {
-				for x := 0; x < p.imageWidth; x++ {
-					tempWorld[y][x] = world[y][x]
-				}
-			}
-			//using fixed tempworld state to check and update world
-			for y := 0; y < p.imageHeight; y++ {
-				for x := 0; x < p.imageWidth; x++ {
-					temp := collectNeighbours(x, y, tempWorld, p)
-
-					if temp == 3 && world[y][x] == 0 {
-						world[y][x] = 255
-					}
-					if temp < 2 || temp > 3 {
-						world[y][x] = 0
-					}
-
-
-
-				}
-			}
-
-		*/
 
 	}
 
