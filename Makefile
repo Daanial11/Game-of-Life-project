@@ -10,7 +10,7 @@ gol:
 # eg: -run /16x16x2-0
 # to run a specific test
 test:
-	go test 
+	go test
 
 
 # Use -benchtime [TIME][UNIT]

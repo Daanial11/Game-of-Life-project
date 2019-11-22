@@ -2,9 +2,48 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
+	"time"
 )
+
+func AlivePrint(world [][]uint8, p golParams){
+	var Alive []cell
+	// Go through the world and append the cells that are still alive.
+	for y := 0; y < p.imageHeight; y++ {
+		for x := 0; x < p.imageWidth; x++ {
+			if world[y][x] != 0 {
+				Alive = append(Alive, cell{x: x, y: y})
+			}
+		}
+	}
+	fmt.Println("Alive cells are ", Alive)
+
+}
+
+func timeAlive(done chan<- int){
+	time.Sleep(2*time.Second)
+	done <- 5
+	timeAlive(done)
+}
+
+func keyboardCommandCheck (state chan<- rune){
+	c2 := make(chan rune)
+	go getKeyboardCommand(c2)
+	command := <-c2
+	state<-command
+}
+
+func pause(){
+	c2 := make(chan rune)
+	go getKeyboardCommand(c2)
+	command := <-c2
+	if command !='p'{
+		pause()
+	}
+	fmt.Println("Continuing")
+}
 
 func collectNeighbours(x, y int, world [][]byte, height, width int) int {
 	neigh := 0
@@ -40,12 +79,6 @@ func collectNeighbours(x, y int, world [][]byte, height, width int) int {
 	return neigh
 }
 
-func makeImmutableMatrix(matrix [][]uint8) func(y, x int) uint8 {
-	return func(y, x int) uint8 {
-		return matrix[y][x]
-	}
-}
-
 func makeMatrix(height, width int) [][]uint8 {
 	matrix := make([][]uint8, height)
 	for i := range matrix {
@@ -55,11 +88,11 @@ func makeMatrix(height, width int) [][]uint8 {
 }
 
 //func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
-func worker(startY, endY, endX int, p golParams, out chan [][]uint8, turns int) {
+func worker(startY, endY, endX int, p golParams, out chan [][]uint8) {
 	height := endY - startY
 
 	currentSegment := <-out
-	//copying segment as using the append operatins below modifies 'currentSegment'
+	//copying segment as using the append operations below modifies 'currentSegment'
 	segmentCopy := make([][]uint8, len(currentSegment))
 	copy(segmentCopy, currentSegment)
 
@@ -123,71 +156,86 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 	}
 
 	// Calculate the new state of Game of Life after the given number of turns.
-	tempWorld := make([][]byte, p.imageHeight)
-	for i := range tempWorld {
-		tempWorld[i] = make([]byte, p.imageWidth)
-	}
+	tempWorld := makeMatrix(p.imageHeight, p.imageWidth)
+
 	//copying world to temp world
-	for y := 0; y < p.imageHeight; y++ {
-		for x := 0; x < p.imageWidth; x++ {
-			tempWorld[y][x] = world[y][x]
-		}
-	}
+	copy(tempWorld, world)
+	c1 := make(chan rune)
+	timer := make(chan int)
+	go keyboardCommandCheck(c1)
+	terminate := false
+	go timeAlive(timer)
+	for turns := 0; turns < p.turns;{
+		select{
+			case command :=<-c1:
+				turns--
+				if command == 's'{
+					//writePGMFile
+				}
+				if command == 'p'{
+					pause()
+				}
+				if command == 'q'{
+					terminate = true
+				}
+				go keyboardCommandCheck(c1)
 
-	for turns := 0; turns < p.turns; turns++ {
+			case <-timer:
+				AlivePrint(world, p)
+			default:
+			turns++
+			currentHeight := 0
 
-		currentHeight := 0
+			dividedHeight := p.imageHeight / p.threads
+			out := make([]chan [][]uint8, p.threads)
 
-		dividedHeight := p.imageHeight / p.threads
-		out := make([]chan [][]uint8, p.threads)
-
-		for i := range out {
-			out[i] = make(chan [][]uint8)
-		}
-
-		for threads := 0; threads < p.threads; threads++ {
-
-			segmentWorld := makeMatrix(0, 0)
-			lastRow := world[p.imageHeight-1]
-			if threads != 0 {
-				segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)-1])
-			} else {
-				segmentWorld = append(segmentWorld, lastRow)
-
+			for i := range out {
+				out[i] = make(chan [][]uint8)
 			}
-			for i := 0; i < dividedHeight; i++ {
-				segmentWorld = append(segmentWorld, world[(threads*dividedHeight)+i])
-				if i == dividedHeight-1 {
-					if threads != (p.threads - 1) {
-						segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)+i+1])
-					} else {
-						segmentWorld = append(segmentWorld, world[0])
-					}
+
+			for threads := 0; threads < p.threads; threads++ {
+
+				segmentWorld := makeMatrix(0, 0)
+				lastRow := world[p.imageHeight-1]
+				if threads != 0 {
+					segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)-1])
+				} else {
+					segmentWorld = append(segmentWorld, lastRow)
 
 				}
+				for i := 0; i < dividedHeight; i++ {
+					segmentWorld = append(segmentWorld, world[(threads*dividedHeight)+i])
+					if i == dividedHeight-1 {
+						if threads != (p.threads - 1) {
+							segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)+i+1])
+						} else {
+							segmentWorld = append(segmentWorld, world[0])
+						}
+
+					}
+				}
+
+				go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, p, out[threads])
+
+				out[threads] <- segmentWorld
+
+				currentHeight += dividedHeight
 			}
 
-			go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, p, out[threads], turns)
+			//combining each segment
+			newWorld := makeMatrix(0, 0)
+			for i := 0; i < p.threads; i++ {
+				newSegment := <-out[i]
+				newWorld = append(newWorld, newSegment...)
 
-			out[threads] <- segmentWorld
-
-			currentHeight += dividedHeight
-		}
-
-		//combining each segment
-		newWorld := makeMatrix(0, 0)
-		for i := 0; i < p.threads; i++ {
-			newSegment := <-out[i]
-			newWorld = append(newWorld, newSegment...)
-
-		}
-		//Copying over the final world state for this turn
-		for y := 0; y < p.imageHeight; y++ {
-			for x := 0; x < p.imageWidth; x++ {
-				world[y][x] = newWorld[y][x]
+			}
+			//Copying over the final world state for this turn
+			for y := 0; y < p.imageHeight; y++ {
+				for x := 0; x < p.imageWidth; x++ {
+					world[y][x] = newWorld[y][x]
+				}
 			}
 		}
-
 	}
 
 	// Create an empty slice to store coordinates of cells that are still alive after p.turns are done.
@@ -212,4 +260,8 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 
 	// Return the coordinates of cells that are still alive.
 	alive <- finalAlive
+
+	if terminate {
+		os.Exit(3)
+	}
 }
