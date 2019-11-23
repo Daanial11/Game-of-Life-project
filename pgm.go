@@ -38,6 +38,7 @@ func writePgmImage(p golParams, i ioChans) {
 	for i := range world {
 		world[i] = make([]byte, p.imageWidth)
 	}
+
 	val := <-i.distributor.outputVal
 	// TODO: write a for-loop to receive the world from the distributor when outputting.
 	for y := 0; y < p.imageHeight; y++ {
@@ -57,6 +58,13 @@ func writePgmImage(p golParams, i ioChans) {
 	check(ioError)
 
 	fmt.Println("File", filename, "output done!")
+
+	// If 'q' or 's' were pressed we want to terminate the program after the output for the final or current state has finished
+	if terminate.Get() || endWithCurrentState.Get() {
+		fmt.Println("Terminated")
+		os.Exit(1)
+	}
+
 }
 
 // readPgmImage opens a pgm file and sends its data as an array of bytes.

@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"sync"
 )
 
 // golParams provides the details of how to run the Game of Life and which image to load.
@@ -95,15 +97,65 @@ func gameOfLife(p golParams, keyChan <-chan rune) []cell {
 
 	go distributor(p, dChans, aliveCells)
 	go pgmIo(p, ioChans)
-
+	go keyButtonControl(keyChan, p, ioChans, dChans)
 	alive := <-aliveCells
 	return alive
+}
+
+//Using safebool and mutex locks to prevent data race that occurs normally when trying to access these variables in multiple places
+var pausedState SafeBool
+var terminate SafeBool
+var endWithCurrentState SafeBool
+
+//Infinite loop to see what key is pressed running on separate goroutine from logic so commands are nearly instant
+func keyButtonControl(keyChan <-chan rune, p golParams, i ioChans, d distributorChans) {
+
+	for {
+		select {
+		case key := <-keyChan:
+			switch key {
+			case 'q':
+				terminate.Set(true)
+			case 's':
+				endWithCurrentState.Set(true)
+			case 'p':
+				if !pausedState.Get() {
+					pausedState.Set(true)
+				} else {
+					pausedState.Set(false)
+					fmt.Println("Continuing")
+				}
+
+			}
+		}
+	}
+}
+
+type SafeBool struct {
+	val bool
+	m   sync.Mutex
+}
+
+//Locks when getting the value and unlocks after
+func (i *SafeBool) Get() bool {
+	i.m.Lock()
+	defer i.m.Unlock()
+	return i.val
+}
+
+//Locks when setting the value and unlocks after
+func (i *SafeBool) Set(val bool) {
+	i.m.Lock()
+	defer i.m.Unlock()
+	i.val = val
 }
 
 // main is the function called when starting Game of Life with 'make gol'
 // Do not edit until Stage 2.
 func main() {
 	var params golParams
+
+	keyChanSend := make(chan rune)
 
 	flag.IntVar(
 		&params.threads,
@@ -125,9 +177,11 @@ func main() {
 
 	flag.Parse()
 
-	params.turns = 1
+	params.turns = 1000000
 
 	startControlServer(params)
-	gameOfLife(params, nil)
+	go getKeyboardCommand(keyChanSend)
+	gameOfLife(params, keyChanSend)
+
 	StopControlServer()
 }
