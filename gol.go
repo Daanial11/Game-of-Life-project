@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -169,47 +168,47 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 		}
 
 		currentHeight := 0
-        dividedHeight := p.imageHeight / p.threads
-        
+		dividedHeight := p.imageHeight / p.threads
+
 		out := make([]chan [][]uint8, p.threads)
-			for i := range out {
-				out[i] = make(chan [][]uint8)
+		for i := range out {
+			out[i] = make(chan [][]uint8)
+		}
+
+		for threads := 0; threads < p.threads; threads++ {
+
+			segmentWorld := makeMatrix(0, 0)
+			lastRow := world[p.imageHeight-1]
+			if threads != 0 {
+				segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)-1])
+			} else {
+				segmentWorld = append(segmentWorld, lastRow)
+
 			}
-
-			for threads := 0; threads < p.threads; threads++ {
-
-				segmentWorld := makeMatrix(0, 0)
-				lastRow := world[p.imageHeight-1]
-				if threads != 0 {
-					segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)-1])
-				} else {
-					segmentWorld = append(segmentWorld, lastRow)
-
-				}
-				for i := 0; i < dividedHeight; i++ {
-					segmentWorld = append(segmentWorld, world[(threads*dividedHeight)+i])
-					if i == dividedHeight-1 {
-						if threads != (p.threads - 1) {
-							segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)+i+1])
-						} else {
-							segmentWorld = append(segmentWorld, world[0])
-						}
-
+			for i := 0; i < dividedHeight; i++ {
+				segmentWorld = append(segmentWorld, world[(threads*dividedHeight)+i])
+				if i == dividedHeight-1 {
+					if threads != (p.threads - 1) {
+						segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)+i+1])
+					} else {
+						segmentWorld = append(segmentWorld, world[0])
 					}
+
 				}
+			}
 
 			go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, p, out[threads])
 
-				out[threads] <- segmentWorld
+			out[threads] <- segmentWorld
 
-				currentHeight += dividedHeight
-			}
+			currentHeight += dividedHeight
+		}
 
-			//combining each segment
-			newWorld := makeMatrix(0, 0)
-			for i := 0; i < p.threads; i++ {
-				newSegment := <-out[i]
-				newWorld = append(newWorld, newSegment...)
+		//combining each segment
+		newWorld := makeMatrix(0, 0)
+		for i := 0; i < p.threads; i++ {
+			newSegment := <-out[i]
+			newWorld = append(newWorld, newSegment...)
 
 		}
 		//Copying over the final world state for this turn, using mutex to avoid data race with aliveprint function
