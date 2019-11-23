@@ -47,10 +47,58 @@ func Test(t *testing.T) {
 			},
 		}},
 
+		{"16x16x6-0", args{
+			p: golParams{
+				turns:       0,
+				threads:     6,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 4, y: 5},
+				{x: 5, y: 6},
+				{x: 3, y: 7},
+				{x: 4, y: 7},
+				{x: 5, y: 7},
+			},
+		}},
+
 		{"16x16x8-0", args{
 			p: golParams{
 				turns:       0,
 				threads:     8,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 4, y: 5},
+				{x: 5, y: 6},
+				{x: 3, y: 7},
+				{x: 4, y: 7},
+				{x: 5, y: 7},
+			},
+		}},
+
+		{"16x16x10-0", args{
+			p: golParams{
+				turns:       0,
+				threads:     10,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 4, y: 5},
+				{x: 5, y: 6},
+				{x: 3, y: 7},
+				{x: 4, y: 7},
+				{x: 5, y: 7},
+			},
+		}},
+
+		{"16x16x12-0", args{
+			p: golParams{
+				turns:       0,
+				threads:     12,
 				imageWidth:  16,
 				imageHeight: 16,
 			},
@@ -95,10 +143,58 @@ func Test(t *testing.T) {
 			},
 		}},
 
+		{"16x16x6-1", args{
+			p: golParams{
+				turns:       1,
+				threads:     6,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 3, y: 6},
+				{x: 5, y: 6},
+				{x: 4, y: 7},
+				{x: 5, y: 7},
+				{x: 4, y: 8},
+			},
+		}},
+
 		{"16x16x8-1", args{
 			p: golParams{
 				turns:       1,
 				threads:     8,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 3, y: 6},
+				{x: 5, y: 6},
+				{x: 4, y: 7},
+				{x: 5, y: 7},
+				{x: 4, y: 8},
+			},
+		}},
+
+		{"16x16x10-1", args{
+			p: golParams{
+				turns:       1,
+				threads:     10,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 3, y: 6},
+				{x: 5, y: 6},
+				{x: 4, y: 7},
+				{x: 5, y: 7},
+				{x: 4, y: 8},
+			},
+		}},
+
+		{"16x16x12-1", args{
+			p: golParams{
+				turns:       1,
+				threads:     12,
 				imageWidth:  16,
 				imageHeight: 16,
 			},
@@ -143,6 +239,22 @@ func Test(t *testing.T) {
 			},
 		}},
 
+		{"16x16x6-100", args{
+			p: golParams{
+				turns:       100,
+				threads:     6,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 12, y: 0},
+				{x: 13, y: 0},
+				{x: 14, y: 0},
+				{x: 13, y: 14},
+				{x: 14, y: 15},
+			},
+		}},
+
 		{"16x16x8-100", args{
 			p: golParams{
 				turns:       100,
@@ -158,6 +270,39 @@ func Test(t *testing.T) {
 				{x: 14, y: 15},
 			},
 		}},
+
+		{"16x16x10-100", args{
+			p: golParams{
+				turns:       100,
+				threads:     10,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 12, y: 0},
+				{x: 13, y: 0},
+				{x: 14, y: 0},
+				{x: 13, y: 14},
+				{x: 14, y: 15},
+			},
+		}},
+
+		{"16x16x12-100", args{
+			p: golParams{
+				turns:       100,
+				threads:     12,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 12, y: 0},
+				{x: 13, y: 0},
+				{x: 14, y: 0},
+				{x: 13, y: 14},
+				{x: 14, y: 15},
+			},
+		}},
+
 
 		// Special test to be used to generate traces - not a real test
 		//{"trace", args{
@@ -212,6 +357,30 @@ func Benchmark(b *testing.B) {
 		}},
 
 		{
+			"16x16x6", golParams{
+			turns:       benchLength,
+			threads:     6,
+			imageWidth:  16,
+			imageHeight: 16,
+		}},
+
+		{
+			"16x16x10", golParams{
+			turns:       benchLength,
+			threads:     10,
+			imageWidth:  16,
+			imageHeight: 16,
+		}},
+
+		{
+			"16x16x12", golParams{
+			turns:       benchLength,
+			threads:     12,
+			imageWidth:  16,
+			imageHeight: 16,
+		}},
+
+		{
 			"64x64x2", golParams{
 			turns:       benchLength,
 			threads:     2,
@@ -231,6 +400,30 @@ func Benchmark(b *testing.B) {
 			"64x64x8", golParams{
 			turns:       benchLength,
 			threads:     8,
+			imageWidth:  64,
+			imageHeight: 64,
+		}},
+
+		{
+			"64x64x6", golParams{
+			turns:       benchLength,
+			threads:     6,
+			imageWidth:  64,
+			imageHeight: 64,
+		}},
+
+		{
+			"64x64x10", golParams{
+			turns:       benchLength,
+			threads:     10,
+			imageWidth:  64,
+			imageHeight: 64,
+		}},
+
+		{
+			"64x64x12", golParams{
+			turns:       benchLength,
+			threads:     12,
 			imageWidth:  64,
 			imageHeight: 64,
 		}},
@@ -260,6 +453,30 @@ func Benchmark(b *testing.B) {
 		}},
 
 		{
+			"128x128x6", golParams{
+			turns:       benchLength,
+			threads:     6,
+			imageWidth:  128,
+			imageHeight: 128,
+		}},
+
+		{
+			"128x128x10", golParams{
+			turns:       benchLength,
+			threads:     10,
+			imageWidth:  128,
+			imageHeight: 128,
+		}},
+
+		{
+			"128x128x12", golParams{
+			turns:       benchLength,
+			threads:     12,
+			imageWidth:  128,
+			imageHeight: 128,
+		}},
+
+		{
 			"256x256x2", golParams{
 			turns:       benchLength,
 			threads:     2,
@@ -284,6 +501,30 @@ func Benchmark(b *testing.B) {
 		}},
 
 		{
+			"256x256x6", golParams{
+			turns:       benchLength,
+			threads:     6,
+			imageWidth:  256,
+			imageHeight: 256,
+		}},
+
+		{
+			"256x256x10", golParams{
+			turns:       benchLength,
+			threads:     10,
+			imageWidth:  256,
+			imageHeight: 256,
+		}},
+
+		{
+			"256x256x12", golParams{
+			turns:       benchLength,
+			threads:     12,
+			imageWidth:  256,
+			imageHeight: 256,
+		}},
+
+		{
 			"512x512x2", golParams{
 			turns:       benchLength,
 			threads:     2,
@@ -303,6 +544,30 @@ func Benchmark(b *testing.B) {
 			"512x512x8", golParams{
 			turns:       benchLength,
 			threads:     8,
+			imageWidth:  512,
+			imageHeight: 512,
+		}},
+
+		{
+			"512x512x6", golParams{
+			turns:       benchLength,
+			threads:     6,
+			imageWidth:  512,
+			imageHeight: 512,
+		}},
+
+		{
+			"512x512x10", golParams{
+			turns:       benchLength,
+			threads:     10,
+			imageWidth:  512,
+			imageHeight: 512,
+		}},
+
+		{
+			"512x512x12", golParams{
+			turns:       benchLength,
+			threads:     12,
 			imageWidth:  512,
 			imageHeight: 512,
 		}},
