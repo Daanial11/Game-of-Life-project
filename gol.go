@@ -4,7 +4,47 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
+
+//As we are accessing world in two places (distributor for giving world the final state and here) we need a
+//mutex lock to prevent a data race which would lead to undefined behaviour
+var worldEdit SafeBool
+
+func AlivePrint(world [][]uint8, p golParams) {
+	ticker := time.NewTicker(2 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			var Alive []cell
+			// Go through the world and append the cells that are still alive.
+			if !worldEdit.Get() {
+				worldEdit.Set(true)
+				for y := 0; y < p.imageHeight; y++ {
+					for x := 0; x < p.imageWidth; x++ {
+						if world[y][x] != 0 {
+							Alive = append(Alive, cell{x: x, y: y})
+						}
+					}
+				}
+				worldEdit.Set(false)
+				fmt.Println("Alive cells: ", len(Alive))
+			}
+			//Checks if processing is paused or not
+		default:
+			if pausedState.Get() {
+				for {
+					if !pausedState.Get() {
+						break
+					}
+				}
+
+			}
+		}
+
+	}
+
+}
 
 func collectNeighbours(x, y int, world [][]byte, height, width int) int {
 	neigh := 0
@@ -20,12 +60,6 @@ func collectNeighbours(x, y int, world [][]byte, height, width int) int {
 				if newX == width {
 					newX = 0
 				}
-				//if newY < 0 {
-				//	newY = height - 1
-				//}
-				//if newY == height {
-				//	newY = 0
-				//}
 
 				if world[newY][newX] == 255 {
 					neigh++
@@ -55,7 +89,7 @@ func makeMatrix(height, width int) [][]uint8 {
 }
 
 //func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
-func worker(startY, endY, endX int, p golParams, out chan [][]uint8, turns int) {
+func worker(startY, endY, endX int, p golParams, out chan [][]uint8) {
 	height := endY - startY
 
 	currentSegment := <-out
@@ -116,25 +150,28 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 		for x := 0; x < p.imageWidth; x++ {
 			val := <-d.io.inputVal
 			if val != 0 {
-				fmt.Println("Alive cell at", x, y)
+				//fmt.Println("Alive cell at", x, y)
 				world[y][x] = val
 			}
 		}
 	}
 
 	// Calculate the new state of Game of Life after the given number of turns.
-	tempWorld := make([][]byte, p.imageHeight)
-	for i := range tempWorld {
-		tempWorld[i] = make([]byte, p.imageWidth)
-	}
-	//copying world to temp world
-	for y := 0; y < p.imageHeight; y++ {
-		for x := 0; x < p.imageWidth; x++ {
-			tempWorld[y][x] = world[y][x]
-		}
-	}
+
+	//Starting goroutine for the number of alive cells every 2 seconds
+	go AlivePrint(world, p)
 
 	for turns := 0; turns < p.turns; turns++ {
+
+		if pausedState.Get() {
+			fmt.Println("Current turn:", turns)
+			for {
+				if !pausedState.Get() {
+					break
+				}
+			}
+
+		}
 
 		currentHeight := 0
 
@@ -167,7 +204,7 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 				}
 			}
 
-			go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, p, out[threads], turns)
+			go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, p, out[threads])
 
 			out[threads] <- segmentWorld
 
@@ -181,11 +218,23 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 			newWorld = append(newWorld, newSegment...)
 
 		}
-		//Copying over the final world state for this turn
-		for y := 0; y < p.imageHeight; y++ {
-			for x := 0; x < p.imageWidth; x++ {
-				world[y][x] = newWorld[y][x]
+		//Copying over the final world state for this turn, using mutex to avoid data race with aliveprint function
+		if !worldEdit.Get() {
+			worldEdit.Set(true)
+			for y := 0; y < p.imageHeight; y++ {
+				for x := 0; x < p.imageWidth; x++ {
+					world[y][x] = newWorld[y][x]
+				}
 			}
+			worldEdit.Set(false)
+		}
+		//Check if key 's' has been pressed, generate PGM with current state and end if pressed.
+
+		if endWithCurrentState.Get() {
+			d.io.command <- ioOutput
+			d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
+			d.io.outputVal <- world
+			break
 		}
 
 	}
@@ -205,7 +254,6 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 	d.io.command <- ioOutput
 	d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
 	d.io.outputVal <- world
-
 	// Make sure that the Io has finished any output before exiting.
 	d.io.command <- ioCheckIdle
 	<-d.io.idle
