@@ -59,8 +59,12 @@ func writePgmImage(p golParams, i ioChans) {
 
 	fmt.Println("File", filename, "output done!")
 
+	if genCurrentState.Get() {
+		genCurrentState.Set(false)
+	}
+
 	// If 'q' or 's' were pressed we want to terminate the program after the output for the final or current state has finished
-	if terminate.Get() || endWithCurrentState.Get() {
+	if terminate.Get() {
 		fmt.Println("Terminated")
 		os.Exit(1)
 	}

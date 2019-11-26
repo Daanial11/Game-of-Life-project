@@ -105,7 +105,7 @@ func gameOfLife(p golParams, keyChan <-chan rune) []cell {
 //Using safebool and mutex locks to prevent data race that occurs normally when trying to access these variables in multiple places
 var pausedState SafeBool
 var terminate SafeBool
-var endWithCurrentState SafeBool
+var genCurrentState SafeBool
 
 //Infinite loop to see what key is pressed running on separate goroutine from logic so commands are nearly instant
 func keyButtonControl(keyChan <-chan rune, p golParams, i ioChans, d distributorChans) {
@@ -117,7 +117,7 @@ func keyButtonControl(keyChan <-chan rune, p golParams, i ioChans, d distributor
 			case 'q':
 				terminate.Set(true)
 			case 's':
-				endWithCurrentState.Set(true)
+				genCurrentState.Set(true)
 			case 'p':
 				if !pausedState.Get() {
 					pausedState.Set(true)

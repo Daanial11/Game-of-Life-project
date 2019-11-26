@@ -221,13 +221,29 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 			}
 			worldEdit.Set(false)
 		}
-		//Check if key 's' has been pressed, generate PGM with current state and end if pressed.
+		//Check if key 's' has been pressed, generate PGM with current state.
 
-		if endWithCurrentState.Get() {
+		if genCurrentState.Get() {
 			d.io.command <- ioOutput
 			d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
 			d.io.outputVal <- world
-			break
+
+			for {
+				if !genCurrentState.Get() {
+					break
+				}
+			}
+
+		}
+		if terminate.Get() {
+			d.io.command <- ioOutput
+			d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
+			if !worldEdit.Get() {
+				worldEdit.Set(true)
+				d.io.outputVal <- world
+				worldEdit.Set(false)
+			}
+
 		}
 
 	}
