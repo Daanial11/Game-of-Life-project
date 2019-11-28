@@ -96,38 +96,54 @@ func makeMatrix(height, width int) [][]uint8 {
 }
 
 //func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
-func worker(startY, endY, endX int, p golParams, out chan [][]uint8) {
-	height := endY - startY
+func worker(startY, endY, endX int, p golParams, out chan [][]uint8, upperCom, lowerCom chan []uint8) {
+	tempWorld := makeMatrix(p.imageHeight, p.imageWidth)
+	tempWorldCopy :=makeMatrix(p.imageHeight,p.imageWidth)
+	for turns := 0; turns < p.turns; turns++ {
 
-	currentSegment := <-out
-	//copying segment as using the append operations below modifies 'currentSegment'
-	segmentCopy := make([][]uint8, len(currentSegment))
-	copy(segmentCopy, currentSegment)
+		if pausedState.Get() {
+			fmt.Println("Current turn:", turns)
+			for {
+				if !pausedState.Get() {
+					break
+				}
+			}
 
-	//removing extra top and bottom row
-	tempWorld := append(segmentCopy[:0], segmentCopy[1:]...)
-	tempWorld = append(tempWorld[:height], tempWorld[height+1:]...)
-
-	//making copy of tempworld with type [][]byte instead of using the tempWorld above, doesn't work without this for some reason.
-	tempWorldCopy := make([][]byte, height)
-	for i := range tempWorldCopy {
-		tempWorldCopy[i] = make([]byte, p.imageWidth)
-	}
-
-	for y := 0; y < height; y++ {
-		for x := 0; x < p.imageWidth; x++ {
-			tempWorldCopy[y][x] = tempWorld[y][x]
 		}
-	}
-	for y := 0; y < height; y++ {
-		for x := 0; x < endX; x++ {
 
-			tempWorldCopy[y][x] = GoLogic(tempWorldCopy[y][x], collectNeighbours(x, y, currentSegment, height, p.imageWidth))
+		height := endY - startY
+
+		currentSegment := <-out
+		//copying segment as using the append operations below modifies 'currentSegment'
+		segmentCopy := make([][]uint8, len(currentSegment))
+		copy(segmentCopy, currentSegment)
+
+		//removing extra top and bottom row
+		tempWorld = append(segmentCopy[:0], segmentCopy[1:]...)
+		tempWorld = append(tempWorld[:height], tempWorld[height+1:]...)
+
+		//making copy of tempworld with type [][]byte instead of using the tempWorld above, doesn't work without this for some reason.
+		tempWorldCopy := make([][]byte, height)
+		for i := range tempWorldCopy {
+			tempWorldCopy[i] = make([]byte, p.imageWidth)
+		}
+
+		for y := 0; y < height; y++ {
+			for x := 0; x < p.imageWidth; x++ {
+				tempWorldCopy[y][x] = tempWorld[y][x]
+			}
+		}
+		for y := 0; y < height; y++ {
+			for x := 0; x < endX; x++ {
+
+				tempWorldCopy[y][x] = GoLogic(tempWorldCopy[y][x], collectNeighbours(x, y, currentSegment, height, p.imageWidth))
+			}
 		}
 	}
 
 	out <- tempWorldCopy
 }
+
 
 func GoLogic(cell byte, aliveNeigh int) byte {
 	if aliveNeigh == 3 && cell == 0 {
@@ -168,107 +184,103 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 	//Starting goroutine for the number of alive cells every 2 seconds
 	go AlivePrint(world, p)
 
-	for turns := 0; turns < p.turns; turns++ {
+	currentHeight := 0
 
-		if pausedState.Get() {
-			fmt.Println("Current turn:", turns)
-			for {
-				if !pausedState.Get() {
-					break
+	out := make([]chan [][]uint8, p.threads)
+	for i := range out {
+		out[i] = make(chan [][]uint8)
+	}
+
+	workerCom := make([]chan []uint8, p.threads)
+	for i := range workerCom {
+		workerCom[i] = make(chan []uint8)
+	}
+
+	powerChecker := powerCheck(p.threads)
+	addRowThreads := powerChecker[0]
+	dividedHeight := p.imageHeight / powerChecker[1]
+	x := p.threads
+
+	for threads := 0; threads < p.threads; threads++ {
+		if addRowThreads == x {
+			dividedHeight = dividedHeight * 2
+		}
+		x--
+		segmentWorld := makeMatrix(0, 0)
+		lastRow := world[p.imageHeight-1]
+		if threads != 0 {
+			segmentWorld = append(segmentWorld, world[currentHeight-1])
+		} else {
+			segmentWorld = append(segmentWorld, lastRow)
+
+		}
+		for i := 0; i < dividedHeight; i++ {
+			segmentWorld = append(segmentWorld, world[currentHeight+i])
+			if i == dividedHeight-1 {
+				if threads != (p.threads - 1) {
+					segmentWorld = append(segmentWorld, world[currentHeight+i+1])
+				} else {
+					segmentWorld = append(segmentWorld, world[0])
 				}
-			}
 
+			}
 		}
 
-		currentHeight := 0
-
-		out := make([]chan [][]uint8, p.threads)
-		for i := range out {
-			out[i] = make(chan [][]uint8)
+		if threads !=0 {
+			go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, p, out[threads], workerCom[threads], workerCom[threads+1])
+		} else if threads== 0{
+			go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, p, out[threads], workerCom[p.threads-1], workerCom[threads])
 		}
+		out[threads] <- segmentWorld
 
-		powerChecker := powerCheck(p.threads)
-		addRowThreads := powerChecker[0]
-		dividedHeight := p.imageHeight / powerChecker[1]
-		x := p.threads
+		currentHeight += dividedHeight
+	}
 
-		for threads := 0; threads < p.threads; threads++ {
-			if addRowThreads == x {
-				dividedHeight = dividedHeight * 2
+	//combining each segment
+	newWorld := makeMatrix(0, 0)
+	for i := 0; i < p.threads; i++ {
+		newSegment := <-out[i]
+		newWorld = append(newWorld, newSegment...)
+
+	}
+	//Copying over the final world state for this turn, using mutex to avoid data race with aliveprint function
+	if !worldEdit.Get() {
+		worldEdit.Set(true)
+		for y := 0; y < p.imageHeight; y++ {
+			for x := 0; x < p.imageWidth; x++ {
+				world[y][x] = newWorld[y][x]
 			}
-			x--
-			segmentWorld := makeMatrix(0, 0)
-			lastRow := world[p.imageHeight-1]
-			if threads != 0 {
-				segmentWorld = append(segmentWorld, world[currentHeight-1])
-			} else {
-				segmentWorld = append(segmentWorld, lastRow)
-
-			}
-			for i := 0; i < dividedHeight; i++ {
-				segmentWorld = append(segmentWorld, world[currentHeight+i])
-				if i == dividedHeight-1 {
-					if threads != (p.threads - 1) {
-						segmentWorld = append(segmentWorld, world[currentHeight+i+1])
-					} else {
-						segmentWorld = append(segmentWorld, world[0])
-					}
-
-				}
-			}
-
-			go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, p, out[threads])
-
-			out[threads] <- segmentWorld
-
-			currentHeight += dividedHeight
 		}
+		worldEdit.Set(false)
+	}
+	//Check if key 's' has been pressed, generate PGM with current state.
 
-		//combining each segment
-		newWorld := makeMatrix(0, 0)
-		for i := 0; i < p.threads; i++ {
-			newSegment := <-out[i]
-			newWorld = append(newWorld, newSegment...)
+	//Check if key 's' has been pressed, generate PGM with current state and end if pressed.
 
-		}
-		//Copying over the final world state for this turn, using mutex to avoid data race with aliveprint function
-		if !worldEdit.Get() {
-			worldEdit.Set(true)
-			for y := 0; y < p.imageHeight; y++ {
-				for x := 0; x < p.imageWidth; x++ {
-					world[y][x] = newWorld[y][x]
-				}
+	if genCurrentState.Get() {
+		d.io.command <- ioOutput
+		d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
+		d.io.outputVal <- world
+
+		for {
+			if !genCurrentState.Get() {
+				break
 			}
-			worldEdit.Set(false)
-		}
-		//Check if key 's' has been pressed, generate PGM with current state.
-
-		//Check if key 's' has been pressed, generate PGM with current state and end if pressed.
-
-		if genCurrentState.Get() {
-			d.io.command <- ioOutput
-			d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
-			d.io.outputVal <- world
-
-			for {
-				if !genCurrentState.Get() {
-					break
-				}
-			}
-
-		}
-
-		if terminate.Get() {
-			d.io.command <- ioOutput
-			d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
-			if !worldEdit.Get() {
-				worldEdit.Set(true)
-				d.io.outputVal <- world
-			}
-
 		}
 
 	}
+
+	if terminate.Get() {
+		d.io.command <- ioOutput
+		d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
+		if !worldEdit.Get() {
+			worldEdit.Set(true)
+			d.io.outputVal <- world
+		}
+
+	}
+
+
 
 	// Create an empty slice to store coordinates of cells that are still alive after p.turns are done.
 	var finalAlive []cell
