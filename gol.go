@@ -15,12 +15,12 @@ func powerCheck(x int) [2]int {
 	var remNum [2]int
 	y := 16
 	for {
-		if x > y / 2 {
+		if x > y/2 {
 			remNum[0] = y - x
 			remNum[1] = y
 			return remNum
 		}
-		y  = y / 2
+		y = y / 2
 	}
 }
 
@@ -193,7 +193,7 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 		x := p.threads
 
 		for threads := 0; threads < p.threads; threads++ {
-			if addRowThreads == x{
+			if addRowThreads == x {
 				dividedHeight = dividedHeight * 2
 			}
 			x--
@@ -243,6 +243,8 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 		}
 		//Check if key 's' has been pressed, generate PGM with current state.
 
+		//Check if key 's' has been pressed, generate PGM with current state and end if pressed.
+
 		if genCurrentState.Get() {
 			d.io.command <- ioOutput
 			d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
@@ -255,13 +257,13 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 			}
 
 		}
+
 		if terminate.Get() {
 			d.io.command <- ioOutput
 			d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
 			if !worldEdit.Get() {
 				worldEdit.Set(true)
 				d.io.outputVal <- world
-				worldEdit.Set(false)
 			}
 
 		}
