@@ -11,6 +11,19 @@ import (
 //mutex lock to prevent a data race which would lead to undefined behaviour
 var worldEdit SafeBool
 
+func powerCheck(x int) [2]int {
+	var remNum [2]int
+	y := 16
+	for {
+		if x > y / 2 {
+			remNum[0] = y - x
+			remNum[1] = y
+			return remNum
+		}
+		y  = y / 2
+	}
+}
+
 func AlivePrint(world [][]uint8, p golParams) {
 	ticker := time.NewTicker(2 * time.Second)
 	for {
@@ -168,28 +181,35 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 		}
 
 		currentHeight := 0
-		dividedHeight := p.imageHeight / p.threads
 
 		out := make([]chan [][]uint8, p.threads)
 		for i := range out {
 			out[i] = make(chan [][]uint8)
 		}
 
-		for threads := 0; threads < p.threads; threads++ {
+		powerChecker := powerCheck(p.threads)
+		addRowThreads := powerChecker[0]
+		dividedHeight := p.imageHeight / powerChecker[1]
+		x := p.threads
 
+		for threads := 0; threads < p.threads; threads++ {
+			if addRowThreads == x{
+				dividedHeight = dividedHeight * 2
+			}
+			x--
 			segmentWorld := makeMatrix(0, 0)
 			lastRow := world[p.imageHeight-1]
 			if threads != 0 {
-				segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)-1])
+				segmentWorld = append(segmentWorld, world[currentHeight-1])
 			} else {
 				segmentWorld = append(segmentWorld, lastRow)
 
 			}
 			for i := 0; i < dividedHeight; i++ {
-				segmentWorld = append(segmentWorld, world[(threads*dividedHeight)+i])
+				segmentWorld = append(segmentWorld, world[currentHeight+i])
 				if i == dividedHeight-1 {
 					if threads != (p.threads - 1) {
-						segmentWorld = append(segmentWorld, world[((threads)*dividedHeight)+i+1])
+						segmentWorld = append(segmentWorld, world[currentHeight+i+1])
 					} else {
 						segmentWorld = append(segmentWorld, world[0])
 					}
