@@ -59,16 +59,6 @@ func writePgmImage(p golParams, i ioChans) {
 
 	fmt.Println("File", filename, "output done!")
 
-	if genCurrentState.Get() {
-		genCurrentState.Set(false)
-	}
-
-	// If 'q' or 's' were pressed we want to terminate the program after the output for the final or current state has finished
-	if terminate.Get() {
-		fmt.Println("Terminated")
-		os.Exit(1)
-	}
-
 }
 
 // readPgmImage opens a pgm file and sends its data as an array of bytes.

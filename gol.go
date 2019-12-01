@@ -2,14 +2,11 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 )
-
-//As we are accessing world in two places (distributor for giving world the final state and here) we need a
-//mutex lock to prevent a data race which would lead to undefined behaviour
-var worldEdit SafeBool
 
 func powerCheck(x int) [2]int {
 	var remNum [2]int
@@ -22,41 +19,6 @@ func powerCheck(x int) [2]int {
 		}
 		y = y / 2
 	}
-}
-
-func AlivePrint(world [][]uint8, p golParams) {
-	ticker := time.NewTicker(2 * time.Second)
-	for {
-		select {
-		case <-ticker.C:
-			var Alive []cell
-			// Go through the world and append the cells that are still alive.
-			if !worldEdit.Get() {
-				worldEdit.Set(true)
-				for y := 0; y < p.imageHeight; y++ {
-					for x := 0; x < p.imageWidth; x++ {
-						if world[y][x] != 0 {
-							Alive = append(Alive, cell{x: x, y: y})
-						}
-					}
-				}
-				worldEdit.Set(false)
-				fmt.Println("Alive cells: ", len(Alive))
-			}
-			//Checks if processing is paused or not
-		default:
-			if pausedState.Get() {
-				for {
-					if !pausedState.Get() {
-						break
-					}
-				}
-
-			}
-		}
-
-	}
-
 }
 
 func collectNeighbours(x, y int, world [][]byte, height, width int) int {
@@ -99,7 +61,7 @@ func makeMatrix(height, width int) [][]uint8 {
 }
 
 //func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
-func worker(startY, endY, endX, t int, p golParams, out chan uint8, upperCom, lowerCom chan uint8) {
+func worker(startY, endY, endX, t int, p golParams, out chan uint8, upperCom, lowerCom chan uint8, aliveChan chan int, commandChan chan uint8) {
 	height := endY - startY
 
 	tempWorld := makeMatrix(height, p.imageWidth)
@@ -119,6 +81,7 @@ func worker(startY, endY, endX, t int, p golParams, out chan uint8, upperCom, lo
 	segmentCopy := make([][]uint8, len(currentSegment))
 
 	for turns := 0; turns < p.turns; turns++ {
+
 		tempWorld = nil
 
 		copy(segmentCopy, currentSegment)
@@ -127,26 +90,46 @@ func worker(startY, endY, endX, t int, p golParams, out chan uint8, upperCom, lo
 		tempWorld = append(segmentCopy[:0], segmentCopy[1:]...)
 		tempWorld = append(tempWorld[:height], tempWorld[height+1:]...)
 
-		if pausedState.Get() {
-			fmt.Println("Current turn:", turns)
-			for {
-				if !pausedState.Get() {
-					break
-				}
-			}
-
-		}
 		for y := 0; y < height; y++ {
 			for x := 0; x < p.imageWidth; x++ {
 				tempWorldCopy[y][x] = tempWorld[y][x]
 			}
 		}
 
+		aliveCount := 0
 		for y := 0; y < height; y++ {
 			for x := 0; x < endX; x++ {
 				tempWorldCopy[y][x] = GoLogic(tempWorldCopy[y][x], collectNeighbours(x, y, currentSegment, height, p.imageWidth))
+				if tempWorldCopy[y][x] == 255 {
+					aliveCount++
+				}
 
 			}
+		}
+		select {
+		case command := <-commandChan:
+			//fmt.Println(command)
+			switch command {
+			case '1':
+				aliveChan <- aliveCount
+
+			case '2':
+				for y := 0; y < height; y++ {
+					for x := 0; x < p.imageWidth; x++ {
+						out <- tempWorldCopy[y][x]
+					}
+				}
+			case '3':
+				if t == 0 {
+					fmt.Println("Current turn:", turns)
+				}
+				select {
+				case <-commandChan:
+				}
+
+			}
+
+		default:
 		}
 
 		if t == 0 {
@@ -198,12 +181,15 @@ func worker(startY, endY, endX, t int, p golParams, out chan uint8, upperCom, lo
 		}
 
 	}
-	fmt.Println("test")
+
+	if t == 0 {
+		commandChan <- byte('4')
+	}
+
 	for y := 0; y < height; y++ {
 		for x := 0; x < p.imageWidth; x++ {
 			out <- tempWorldCopy[y][x]
 		}
-		//out <- tempWorldCopy
 	}
 }
 
@@ -218,7 +204,7 @@ func GoLogic(cell byte, aliveNeigh int) byte {
 }
 
 // distributor divides the work between workers and interacts with other goroutines.
-func distributor(p golParams, d distributorChans, alive chan []cell) {
+func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-chan rune) {
 
 	// Create the 2D slice to store the world.
 	world := make([][]byte, p.imageHeight)
@@ -235,7 +221,7 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 		for x := 0; x < p.imageWidth; x++ {
 			val := <-d.io.inputVal
 			if val != 0 {
-				fmt.Println("Alive cell at", x, y)
+				//fmt.Println("Alive cell at", x, y)
 				world[y][x] = val
 			}
 		}
@@ -243,20 +229,24 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 
 	// Calculate the new state of Game of Life after the given number of turns.
 
-	//Starting goroutine for the number of alive cells every 2 seconds
-	go AlivePrint(world, p)
-
 	currentHeight := 0
 
 	out := make([]chan uint8, p.threads)
 	for i := range out {
 		out[i] = make(chan uint8)
 	}
-
+	//Using this to control each worker
+	commandChan := make([]chan uint8, p.threads)
+	for i := range out {
+		commandChan[i] = make(chan uint8, 1)
+	}
+	//Used for halo communication between workers
 	workerCom := make([]chan uint8, p.threads)
 	for i := range workerCom {
 		workerCom[i] = make(chan uint8)
 	}
+	//Used to send alive count from worker to distributor
+	aliveChan := make(chan int, 8)
 
 	powerChecker := powerCheck(p.threads)
 	addRowThreads := powerChecker[0]
@@ -271,9 +261,9 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 			}
 			x--
 			if threads == 0 {
-				go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, threads, p, out[threads], workerCom[p.threads-1], workerCom[0])
+				go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, threads, p, out[threads], workerCom[p.threads-1], workerCom[0], aliveChan, commandChan[threads])
 			} else {
-				go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, threads, p, out[threads], workerCom[threads-1], workerCom[threads])
+				go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, threads, p, out[threads], workerCom[threads-1], workerCom[threads], aliveChan, commandChan[threads])
 			}
 
 			lastRow := world[p.imageHeight-1]
@@ -313,56 +303,132 @@ func distributor(p golParams, d distributorChans, alive chan []cell) {
 			currentHeight += dividedHeight
 		}
 
-		//combining each segment
-
-		newWorld := makeMatrix(p.imageHeight, p.imageWidth)
-		for y := 0; y < p.imageHeight; y++ {
-			for x := 0; x < p.imageWidth; x++ {
-				i := y / (p.imageHeight / p.threads)
-				newWorld[y][x] = <-out[i]
-			}
-		}
-
-		//Copying over the final world state for this turn, using mutex to avoid data race with aliveprint function
-
-		if !worldEdit.Get() {
-			worldEdit.Set(true)
-			for y := 0; y < p.imageHeight; y++ {
-				for x := 0; x < p.imageWidth; x++ {
-					world[y][x] = newWorld[y][x]
-				}
-			}
-			worldEdit.Set(false)
-		}
-	}
-
-	//Check if key 's' has been pressed, generate PGM with current state.
-
-	//Check if key 's' has been pressed, generate PGM with current state and end if pressed.
-
-	if genCurrentState.Get() {
-		d.io.command <- ioOutput
-		d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
-		d.io.outputVal <- world
-
+		ticker := time.NewTicker(2 * time.Second)
+		workersFinished := false
 		for {
-			if !genCurrentState.Get() {
+			if workersFinished {
 				break
 			}
+			select {
+			case <-ticker.C:
+				command := byte('1')
+				aliveCount := 0
+				for threads := 0; threads < p.threads; threads++ {
+					commandChan[threads] <- command
+				}
+
+				for threads := 0; threads < p.threads; threads++ {
+					aliveCount += <-aliveChan
+				}
+
+				fmt.Println("Alive cells:", aliveCount)
+
+			default:
+			}
+
+			select {
+			case key := <-keyChan:
+				switch key {
+				case 'q':
+
+					command := byte('2')
+					for threads := 0; threads < p.threads; threads++ {
+						commandChan[threads] <- command
+					}
+					dividedHeight2 := p.imageHeight / powerChecker[1]
+					x2 := p.threads
+					currentHeight2 := 0
+					for threads := 0; threads < p.threads; threads++ {
+						if addRowThreads == x2 {
+							dividedHeight2 = dividedHeight2 * 2
+						}
+						x2--
+						for i := 0; i < dividedHeight2; i++ {
+							for x := 0; x < p.imageWidth; x++ {
+								cell := <-out[threads]
+								world[currentHeight2+i][x] = byte(cell)
+							}
+						}
+						currentHeight2 += dividedHeight2
+					}
+					d.io.command <- ioOutput
+					d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
+					d.io.outputVal <- world
+					d.io.command <- ioCheckIdle
+					<-d.io.idle
+					fmt.Println("Terminated")
+					os.Exit(1)
+				case 's':
+					command := byte('2')
+					for threads := 0; threads < p.threads; threads++ {
+						commandChan[threads] <- command
+					}
+					dividedHeight2 := p.imageHeight / powerChecker[1]
+					x2 := p.threads
+					currentHeight2 := 0
+					for threads := 0; threads < p.threads; threads++ {
+						if addRowThreads == x2 {
+							dividedHeight2 = dividedHeight2 * 2
+						}
+						x2--
+						for i := 0; i < dividedHeight2; i++ {
+							for x := 0; x < p.imageWidth; x++ {
+								cell := <-out[threads]
+								world[currentHeight2+i][x] = byte(cell)
+							}
+						}
+						currentHeight2 += dividedHeight2
+					}
+					d.io.command <- ioOutput
+					d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
+					d.io.outputVal <- world
+					d.io.command <- ioCheckIdle
+					<-d.io.idle
+				case 'p':
+					command := byte('3')
+					for threads := 0; threads < p.threads; threads++ {
+						commandChan[threads] <- command
+					}
+					select {
+					case <-keyChan:
+						for threads := 0; threads < p.threads; threads++ {
+							commandChan[threads] <- command
+						}
+						fmt.Println("Continuing")
+					}
+
+				}
+			default:
+			}
+
+			select {
+			case <-commandChan[0]:
+				workersFinished = true
+			default:
+			}
+
+		}
+
+		//merging segments for final state
+		dividedHeight2 := p.imageHeight / powerChecker[1]
+		x2 := p.threads
+		currentHeight2 := 0
+
+		for threads := 0; threads < p.threads; threads++ {
+			if addRowThreads == x2 {
+				dividedHeight2 = dividedHeight2 * 2
+			}
+			x2--
+			for i := 0; i < dividedHeight2; i++ {
+				for x := 0; x < p.imageWidth; x++ {
+					cell := <-out[threads]
+					world[currentHeight2+i][x] = byte(cell)
+				}
+			}
+			currentHeight2 += dividedHeight2
 		}
 
 	}
-
-	if terminate.Get() {
-		d.io.command <- ioOutput
-		d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
-		if !worldEdit.Get() {
-			worldEdit.Set(true)
-			d.io.outputVal <- world
-		}
-
-	}
-
 	// Create an empty slice to store coordinates of cells that are still alive after p.turns are done.
 	var finalAlive []cell
 	// Go through the world and append the cells that are still alive.
