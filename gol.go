@@ -61,7 +61,7 @@ func makeMatrix(height, width int) [][]uint8 {
 }
 
 //func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
-func worker(startY, endY, endX, t int, p golParams, out chan uint8, upperCom, lowerCom chan uint8, aliveChan chan int, commandChan chan uint8) {
+func worker(startY, endY, endX, t int, p golParams, out chan uint8, upperCom, lowerCom chan uint8, aliveChan chan int, commandChan chan uint8, workersFinChan chan bool) {
 	height := endY - startY
 
 	tempWorld := makeMatrix(height, p.imageWidth)
@@ -106,9 +106,8 @@ func worker(startY, endY, endX, t int, p golParams, out chan uint8, upperCom, lo
 
 			}
 		}
-		select {
-		case command := <-commandChan:
-			//fmt.Println(command)
+		command := <-commandChan
+		if command != '0' {
 			switch command {
 			case '1':
 				aliveChan <- aliveCount
@@ -129,7 +128,6 @@ func worker(startY, endY, endX, t int, p golParams, out chan uint8, upperCom, lo
 
 			}
 
-		default:
 		}
 
 		if t == 0 {
@@ -181,9 +179,10 @@ func worker(startY, endY, endX, t int, p golParams, out chan uint8, upperCom, lo
 		}
 
 	}
+	close(commandChan)
 
 	if t == 0 {
-		commandChan <- byte('4')
+		workersFinChan <- true
 	}
 
 	for y := 0; y < height; y++ {
@@ -238,8 +237,9 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 	//Using this to control each worker
 	commandChan := make([]chan uint8, p.threads)
 	for i := range out {
-		commandChan[i] = make(chan uint8, 1)
+		commandChan[i] = make(chan uint8)
 	}
+	workersFinChan := make(chan bool)
 	//Used for halo communication between workers
 	workerCom := make([]chan uint8, p.threads)
 	for i := range workerCom {
@@ -261,9 +261,9 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 			}
 			x--
 			if threads == 0 {
-				go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, threads, p, out[threads], workerCom[p.threads-1], workerCom[0], aliveChan, commandChan[threads])
+				go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, threads, p, out[threads], workerCom[p.threads-1], workerCom[0], aliveChan, commandChan[threads], workersFinChan)
 			} else {
-				go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, threads, p, out[threads], workerCom[threads-1], workerCom[threads], aliveChan, commandChan[threads])
+				go worker(currentHeight, currentHeight+dividedHeight, p.imageWidth, threads, p, out[threads], workerCom[threads-1], workerCom[threads], aliveChan, commandChan[threads], nil)
 			}
 
 			lastRow := world[p.imageHeight-1]
@@ -306,6 +306,11 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 		ticker := time.NewTicker(2 * time.Second)
 		workersFinished := false
 		for {
+			select {
+			case <-workersFinChan:
+				workersFinished = true
+			default:
+			}
 			if workersFinished {
 				break
 			}
@@ -399,12 +404,10 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 
 				}
 			default:
-			}
+				for threads := 0; threads < p.threads; threads++ {
+					SafeSend(commandChan[threads], byte('0'))
 
-			select {
-			case <-commandChan[0]:
-				workersFinished = true
-			default:
+				}
 			}
 
 		}
@@ -451,4 +454,15 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 
 	// Return the coordinates of cells that are still alive.
 	alive <- finalAlive
+}
+
+func SafeSend(ch chan uint8, value uint8) (closed bool) {
+	defer func() {
+		if recover() != nil {
+			closed = true
+		}
+	}()
+
+	ch <- value  // panic if ch is closed
+	return false // <=> closed = false; return
 }
