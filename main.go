@@ -39,7 +39,7 @@ type distributorToIo struct {
 
 	filename  chan<- string
 	inputVal  <-chan uint8
-	outputVal chan<- [][]byte
+	outputVal chan<- byte
 }
 
 // ioToDistributor defines all chans that the io goroutine will have to communicate with the distributor goroutine.
@@ -50,7 +50,7 @@ type ioToDistributor struct {
 
 	filename  <-chan string
 	inputVal  chan<- uint8
-	outputVal <-chan [][]byte
+	outputVal <-chan byte
 }
 
 // distributorChans stores all the chans that the distributor goroutine will use.
@@ -87,7 +87,7 @@ func gameOfLife(p golParams, keyChan <-chan rune) []cell {
 	dChans.io.inputVal = inputVal
 	ioChans.distributor.inputVal = inputVal
 
-	outputVal := make(chan [][]byte)
+	outputVal := make(chan byte)
 	dChans.io.outputVal = outputVal
 	ioChans.distributor.outputVal = outputVal
 

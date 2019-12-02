@@ -358,7 +358,11 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 					}
 					d.io.command <- ioOutput
 					d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
-					d.io.outputVal <- world
+					for y := 0; y < p.imageHeight; y++ {
+						for x := 0; x < p.imageWidth; x++ {
+							d.io.outputVal <- world[y][x]
+						}
+					}
 					d.io.command <- ioCheckIdle
 					<-d.io.idle
 					fmt.Println("Terminated")
@@ -386,7 +390,11 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 					}
 					d.io.command <- ioOutput
 					d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
-					d.io.outputVal <- world
+					for y := 0; y < p.imageHeight; y++ {
+						for x := 0; x < p.imageWidth; x++ {
+							d.io.outputVal <- world[y][x]
+						}
+					}
 					d.io.command <- ioCheckIdle
 					<-d.io.idle
 				case 'p':
@@ -447,7 +455,11 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 	//tells IO to start outputting
 	d.io.command <- ioOutput
 	d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
-	d.io.outputVal <- world
+	for y := 0; y < p.imageHeight; y++ {
+		for x := 0; x < p.imageWidth; x++ {
+			d.io.outputVal <- world[y][x]
+		}
+	}
 	// Make sure that the Io has finished any output before exiting.
 	d.io.command <- ioCheckIdle
 	<-d.io.idle
