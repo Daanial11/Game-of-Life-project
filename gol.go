@@ -27,7 +27,25 @@ func (i *SafeBool) Set(val bool) {
 	i.val = val
 }
 
-var endedTurnWorld [][]uint8
+type SafeByte struct {
+	val byte
+	m   sync.Mutex
+}
+
+func (i *SafeByte) Get() byte {
+	i.m.Lock()
+	defer i.m.Unlock()
+	return i.val
+}
+
+//Locks when setting the value and unlocks after
+func (i *SafeByte) Set(val byte) {
+	i.m.Lock()
+	defer i.m.Unlock()
+	i.val = val
+}
+
+var endedTurnWorld [][]SafeByte
 
 var workerWg sync.WaitGroup
 
@@ -38,7 +56,6 @@ var evalFin SafeBool
 var addedTime SafeBool
 
 var worldEdit SafeBool
-
 
 func powerCheck(x int) [2]int {
 	var remNum [2]int
@@ -53,7 +70,7 @@ func powerCheck(x int) [2]int {
 	}
 }
 
-func collectNeighbours(x, y int, world [][]byte, height, width int, m bool) int {
+func collectNeighbours(x, y int, world [][]SafeByte, height, width int, m bool) int {
 	neigh := 0
 	for i := -1; i < 2; i++ {
 		for j := 0; j < 3; j++ {
@@ -68,7 +85,7 @@ func collectNeighbours(x, y int, world [][]byte, height, width int, m bool) int 
 					newX = 0
 				}
 
-				if world[newY][newX] == 255 {
+				if world[newY][newX].Get() == 255 {
 					neigh++
 
 				}
@@ -81,12 +98,12 @@ func collectNeighbours(x, y int, world [][]byte, height, width int, m bool) int 
 	return neigh
 }
 
-func alivePrint2(p golParams){
+func alivePrint2(p golParams) {
 	var finalAlive []cell
 	// Go through the world and append the cells that are still alive.
 	for y := 0; y < p.imageHeight; y++ {
 		for x := 0; x < p.imageWidth; x++ {
-			if endedTurnWorld[y][x] != 0 {
+			if endedTurnWorld[y][x].Get() != 0 {
 				finalAlive = append(finalAlive, cell{x: x, y: y})
 			}
 		}
@@ -94,17 +111,17 @@ func alivePrint2(p golParams){
 	fmt.Println(finalAlive)
 }
 
-func timer (p golParams) {
-	ticker:=time.NewTicker(2*time.Second)
+func timer(p golParams) {
+	ticker := time.NewTicker(2 * time.Second)
 	for {
-		if evalFin.Get(){
+		if evalFin.Get() {
 			break
 		}
 		select {
-			case <-ticker.C:
-				alivePrint(p)
-			default:
-			}
+		case <-ticker.C:
+			alivePrint(p)
+		default:
+		}
 	}
 
 }
@@ -114,7 +131,7 @@ func alivePrint(p golParams) {
 	// Go through the world and append the cells that are still alive.
 	for y := 0; y < p.imageHeight; y++ {
 		for x := 0; x < p.imageWidth; x++ {
-			if endedTurnWorld[y][x] != 0 {
+			if endedTurnWorld[y][x].Get() != 0 {
 				finalAlive = append(finalAlive, cell{x: x, y: y})
 			}
 		}
@@ -122,25 +139,25 @@ func alivePrint(p golParams) {
 	fmt.Println("Alive Cells: ", len(finalAlive))
 }
 
-func makeMatrix(height, width int) [][]uint8 {
-	matrix := make([][]uint8, height)
+func makeMatrix(height, width int) [][]SafeByte {
+	matrix := make([][]SafeByte, height)
 	for i := range matrix {
-		matrix[i] = make([]uint8, width)
+		matrix[i] = make([]SafeByte, width)
 	}
 	return matrix
 }
 
 //func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
-func worker(startY, endY, endX, t int, p golParams,  commandChan chan uint8) {
+func worker(startY, endY, endX, t int, p golParams, commandChan chan uint8) {
 	height := endY - startY
 	addedTime.Set(false)
 
 	currentSegment := makeMatrix(height, p.imageWidth)
-	segmentCopy:=makeMatrix(height+2,p.imageWidth)
-	m:=0
+	segmentCopy := makeMatrix(height+2, p.imageWidth)
+	m := 0
 	//copying segment as using the append operations below modifies 'currentSegment'
 	for turns := 0; turns < p.turns; turns++ {
-		m=0
+		m = 0
 		column := 0
 		if !worldEdit.Get() {
 			worldEdit.Set(true)
@@ -157,16 +174,16 @@ func worker(startY, endY, endX, t int, p golParams,  commandChan chan uint8) {
 			worldEdit.Set(false)
 		}
 
-			//fmt.Println(currentSegment)
+		//fmt.Println(currentSegment)
 		for {
 			if !worldEdit.Get() {
 				worldEdit.Set(true)
 				for y := 0; y < height; y++ {
 					for x := 0; x < endX; x++ {
 						if t == 1 && p.threads == 2 && x == 4 && y == 0 {
-							fmt.Println(collectNeighbours(4, 0, segmentCopy, p.imageHeight, p.imageWidth, false))
+							//fmt.Println(collectNeighbours(4, 0, segmentCopy, p.imageHeight, p.imageWidth, false))
 						}
-						currentSegment[y][x] = GoLogic(segmentCopy[y+1][x], collectNeighbours(x, y, segmentCopy, p.imageHeight, p.imageWidth, false))
+						currentSegment[y][x].Set(GoLogic(segmentCopy[y+1][x].Get(), collectNeighbours(x, y, segmentCopy, p.imageHeight, p.imageWidth, false)))
 					}
 				}
 
@@ -174,9 +191,10 @@ func worker(startY, endY, endX, t int, p golParams,  commandChan chan uint8) {
 				m++
 
 			}
-			if m == p.threads{break}
+			if m == p.threads {
+				break
+			}
 		}
-
 
 		/*command := <-commandChan
 		if command == '1' {
@@ -193,19 +211,15 @@ func worker(startY, endY, endX, t int, p golParams,  commandChan chan uint8) {
 
 		*/
 
-		for {
-			if !worldEdit.Get() {
-				worldEdit.Set(true)
-				for y := 0; y < height; y++ {
-					endedTurnWorld[startY+y] = currentSegment[y]
-				}
-				worldEdit.Set(false)
+		for y := 0; y < height; y++ {
+			for x := 0; x < p.imageWidth; x++ {
+				endedTurnWorld[startY+y][x].Set(currentSegment[y][x].Get())
 
-				break
 			}
 		}
+
 	}
-	if t==0 {
+	if t == 0 {
 		//fmt.Println(endedTurnWorld)
 	}
 	evalFin.Set(true)
@@ -233,9 +247,9 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 		world[i] = make([]byte, p.imageWidth)
 	}
 
-	endedTurnWorld = make([][]byte, p.imageHeight)
-	for i := range world {
-		world[i] = make([]byte, p.imageWidth)
+	endedTurnWorld = make([][]SafeByte, p.imageHeight)
+	for i := range endedTurnWorld {
+		endedTurnWorld[i] = make([]SafeByte, p.imageWidth)
 	}
 
 	// Request the io goroutine to read in the image with the given filename.
@@ -267,8 +281,10 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 	addRowThreads := powerChecker[0]
 	dividedHeight := p.imageHeight / powerChecker[1]
 	x := p.threads
-	for i := 0; i <p.imageHeight; i++ {
-			endedTurnWorld[i] = world[i]
+	for i := 0; i < p.imageHeight; i++ {
+		for x := 0; x < p.imageWidth; x++ {
+			endedTurnWorld[i][x].Set(world[i][x])
+		}
 	}
 
 	if p.turns > 0 {
@@ -288,7 +304,7 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 
 		go timer(p)
 		for {
-			if evalFin.Get(){
+			if evalFin.Get() {
 				break
 			}
 			/*select {
@@ -349,7 +365,7 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 				}
 			}
 
-			 */
+			*/
 		}
 	}
 	workerWg.Wait()
@@ -359,7 +375,9 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 	if !worldEdit.Get() {
 		worldEdit.Set(true)
 		for i := 0; i < p.imageHeight; i++ {
-			world[i] = endedTurnWorld[i]
+			for x := 0; x < p.imageWidth; x++ {
+				world[i][x] = endedTurnWorld[i][x].Get()
+			}
 		}
 
 		worldEdit.Set(false)

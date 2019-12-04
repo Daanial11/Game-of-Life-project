@@ -2,7 +2,7 @@ focus ='worker|distributor'
 ignore = 'strings|fmt'
 
 gol:
-	go build
+	go build -race
 	./gameoflife
 
 
