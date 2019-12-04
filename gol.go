@@ -32,6 +32,7 @@ type SafeByte struct {
 	m   sync.Mutex
 }
 
+
 func (i *SafeByte) Get() byte {
 	i.m.Lock()
 	defer i.m.Unlock()
@@ -53,8 +54,6 @@ var workerWorld sync.WaitGroup
 
 var evalFin SafeBool
 
-var addedTime SafeBool
-
 var worldEdit SafeBool
 
 func powerCheck(x int) [2]int {
@@ -70,7 +69,7 @@ func powerCheck(x int) [2]int {
 	}
 }
 
-func collectNeighbours(x, y int, world [][]SafeByte, height, width int, m bool) int {
+func collectNeighbours(x, y int, world [][]SafeByte, height, width int) int {
 	neigh := 0
 	for i := -1; i < 2; i++ {
 		for j := 0; j < 3; j++ {
@@ -149,78 +148,58 @@ func makeMatrix(height, width int) [][]SafeByte {
 
 //func worker(startY, endY, startX, endX int, data func(y, x int) uint8, p golParams, out chan<- [][]uint8){
 func worker(startY, endY, endX, t int, p golParams, commandChan chan uint8) {
+
 	height := endY - startY
-	addedTime.Set(false)
 
 	currentSegment := makeMatrix(height, p.imageWidth)
 	segmentCopy := makeMatrix(height+2, p.imageWidth)
-	m := 0
 	//copying segment as using the append operations below modifies 'currentSegment'
 	for turns := 0; turns < p.turns; turns++ {
-		m = 0
+		if t==0 {
+			workerWorld.Add(p.threads)
+		}
 		column := 0
-		if !worldEdit.Get() {
-			worldEdit.Set(true)
-			for y := 0; y < height+2; y++ {
-				if startY+y == 0 {
-					column = p.imageHeight - 1
-				} else if startY+y > p.imageHeight {
-					column = 0
-				} else {
-					column = startY + y - 1
-				}
-				segmentCopy[y] = endedTurnWorld[column]
+		for y := 0; y < height+2; y++ {
+			if startY+y == 0 {
+				column = p.imageHeight - 1
+			} else if startY+y > p.imageHeight {
+				column = 0
+			} else {
+				column = startY + y - 1
 			}
-			worldEdit.Set(false)
+			segmentCopy[y] = endedTurnWorld[column]
 		}
 
+
 		//fmt.Println(currentSegment)
-		for {
-			if !worldEdit.Get() {
-				worldEdit.Set(true)
-				for y := 0; y < height; y++ {
-					for x := 0; x < endX; x++ {
-						if t == 1 && p.threads == 2 && x == 4 && y == 0 {
-							//fmt.Println(collectNeighbours(4, 0, segmentCopy, p.imageHeight, p.imageWidth, false))
-						}
-						currentSegment[y][x].Set(GoLogic(segmentCopy[y+1][x].Get(), collectNeighbours(x, y, segmentCopy, p.imageHeight, p.imageWidth, false)))
-					}
-				}
 
-				worldEdit.Set(false)
-				m++
 
+		worldEdit.Set(true)
+		for y := 0; y < height; y++ {
+			for x := 0; x < endX; x++ {
+				currentSegment[y][x].Set(GoLogic(segmentCopy[y+1][x].Get(), collectNeighbours(x, y, segmentCopy, p.imageHeight, p.imageWidth)))
 			}
-			if m == p.threads {
+		}
+
+		for {
+			worldEdit.Set(false)
+			time.Sleep(5*time.Millisecond)
+			if !worldEdit.Get(){
 				break
 			}
 		}
 
-		/*command := <-commandChan
-		if command == '1' {
-			if t == 0 {
-				fmt.Println("Current turn:", turns)
-			}
-			select {
-			case <-commandChan:
-			}
 
-		}
-
-		close(commandChan)
-
-		*/
 
 		for y := 0; y < height; y++ {
 			for x := 0; x < p.imageWidth; x++ {
 				endedTurnWorld[startY+y][x].Set(currentSegment[y][x].Get())
-
 			}
 		}
+		workerWorld.Done()
+		workerWorld.Wait()
+		time.Sleep(1*time.Millisecond)
 
-	}
-	if t == 0 {
-		//fmt.Println(endedTurnWorld)
 	}
 	evalFin.Set(true)
 	workerWg.Done()
@@ -307,71 +286,13 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 			if evalFin.Get() {
 				break
 			}
-			/*select {
-			case key := <-keyChan:
-				switch key {
-				case 'q':
-					command := byte('0')
-					for threads := 0; threads < p.threads; threads++ {
-						commandChan[threads] <- command
-					}
-					for i := 0; i < p.imageHeight; i++ {
-						for x := 0; x < p.imageWidth; x++ {
-							world[i][x] = endedTurnWorld[i][x]
-						}
-					}
-					world = endedTurnWorld
-					d.io.command <- ioOutput
-					d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
-					d.io.outputVal <- world
-					d.io.command <- ioCheckIdle
-					<-d.io.idle
-					fmt.Println("Terminated")
-					os.Exit(1)
-				case 's':
-					command := byte('0')
-					for threads := 0; threads < p.threads; threads++ {
-						commandChan[threads] <- command
-					}
-					for i := 0; i < p.imageHeight; i++ {
-						for x := 0; x < p.imageWidth; x++ {
-							world[i][x] = endedTurnWorld[i][x]
-						}
-					}
-
-					d.io.command <- ioOutput
-					d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
-					d.io.outputVal <- world
-					d.io.command <- ioCheckIdle
-					<-d.io.idle
-				case 'p':
-					command := byte('1')
-					for threads := 0; threads < p.threads; threads++ {
-						commandChan[threads] <- command
-					}
-					select {
-					case <-keyChan:
-						for threads := 0; threads < p.threads; threads++ {
-							commandChan[threads] <- command
-						}
-						fmt.Println("Continuing")
-					}
-
-				}
-			default:
-				for threads := 0; threads < p.threads; threads++ {
-					SafeSend(commandChan[threads], byte('0'))
-
-				}
-			}
-
-			*/
 		}
 	}
 	workerWg.Wait()
 
 	//fmt.Println(endedTurnWorld, p.threads)
 	//merging segments for final state
+	//alivePrint2(p)
 	if !worldEdit.Get() {
 		worldEdit.Set(true)
 		for i := 0; i < p.imageHeight; i++ {
@@ -407,13 +328,79 @@ func distributor(p golParams, d distributorChans, alive chan []cell, keyChan <-c
 	alive <- finalAlive
 }
 
-func SafeSend(ch chan uint8, value uint8) (closed bool) {
-	defer func() {
-		if recover() != nil {
-			closed = true
-		}
-	}()
 
-	ch <- value  // panic if ch is closed
-	return false // <=> closed = false; return
+
+/*command := <-commandChan
+if command == '1' {
+	if t == 0 {
+		fmt.Println("Current turn:", turns)
+	}
+	select {
+	case <-commandChan:
+	}
+
 }
+
+close(commandChan)
+
+*/
+
+/*select {
+case key := <-keyChan:
+	switch key {
+	case 'q':
+		command := byte('0')
+		for threads := 0; threads < p.threads; threads++ {
+			commandChan[threads] <- command
+		}
+		for i := 0; i < p.imageHeight; i++ {
+			for x := 0; x < p.imageWidth; x++ {
+				world[i][x] = endedTurnWorld[i][x]
+			}
+		}
+		world = endedTurnWorld
+		d.io.command <- ioOutput
+		d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
+		d.io.outputVal <- world
+		d.io.command <- ioCheckIdle
+		<-d.io.idle
+		fmt.Println("Terminated")
+		os.Exit(1)
+	case 's':
+		command := byte('0')
+		for threads := 0; threads < p.threads; threads++ {
+			commandChan[threads] <- command
+		}
+		for i := 0; i < p.imageHeight; i++ {
+			for x := 0; x < p.imageWidth; x++ {
+				world[i][x] = endedTurnWorld[i][x]
+			}
+		}
+
+		d.io.command <- ioOutput
+		d.io.filename <- strings.Join([]string{strconv.Itoa(p.imageWidth), strconv.Itoa(p.imageHeight)}, "x")
+		d.io.outputVal <- world
+		d.io.command <- ioCheckIdle
+		<-d.io.idle
+	case 'p':
+		command := byte('1')
+		for threads := 0; threads < p.threads; threads++ {
+			commandChan[threads] <- command
+		}
+		select {
+		case <-keyChan:
+			for threads := 0; threads < p.threads; threads++ {
+				commandChan[threads] <- command
+			}
+			fmt.Println("Continuing")
+		}
+
+	}
+default:
+	for threads := 0; threads < p.threads; threads++ {
+		SafeSend(commandChan[threads], byte('0'))
+
+	}
+}
+
+*/
