@@ -16,6 +16,7 @@ func Test(t *testing.T) {
 		name string
 		args args
 	}{
+/*
 		{"16x16x2-0", args{
 			p: golParams{
 				turns:       0,
@@ -64,21 +65,12 @@ func Test(t *testing.T) {
 			},
 		}},
 
-		{"16x16x2-1", args{
-			p: golParams{
-				turns:       1,
-				threads:     2,
-				imageWidth:  16,
-				imageHeight: 16,
-			},
-			expectedAlive: []cell{
-				{x: 3, y: 6},
-				{x: 5, y: 6},
-				{x: 4, y: 7},
-				{x: 5, y: 7},
-				{x: 4, y: 8},
-			},
-		}},
+
+
+		*/
+
+
+
 
 		{"16x16x4-1", args{
 			p: golParams{
@@ -96,7 +88,44 @@ func Test(t *testing.T) {
 			},
 		}},
 
-		{"16x16x8-1", args{
+
+ 		{"16x16x2-1", args{
+			p: golParams{
+				turns:       1,
+				threads:     2,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 3, y: 6},
+				{x: 5, y: 6},
+				{x: 4, y: 7},
+				{x: 5, y: 7},
+				{x: 4, y: 8},
+			},
+		}},
+		/*
+
+		{"16x16x2-2", args{
+			p: golParams{
+				turns:       2,
+				threads:     2,
+				imageWidth:  16,
+				imageHeight: 16,
+			},
+			expectedAlive: []cell{
+				{x: 3, y: 7},
+				{x: 5, y: 6},
+				{x: 4, y: 7},
+				{x: 5, y: 7},
+				{x: 4, y: 8},
+				{x: 5, y: 8},
+			},
+		}},
+
+
+
+		 {"16x16x8-1", args{
 			p: golParams{
 				turns:       1,
 				threads:     8,
@@ -111,7 +140,8 @@ func Test(t *testing.T) {
 				{x: 4, y: 8},
 			},
 		}},
-
+		/*
+/*
 		{"16x16x2-100", args{
 			p: golParams{
 				turns:       100,
@@ -288,6 +318,8 @@ func Test(t *testing.T) {
 			},
 		}},
 
+
+*/
 		// Special test to be used to generate traces - not a real test
 		//{"trace", args{
 		//	p: golParams{
